@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     const result = await runReasoning(symptoms, normalizedAnswers, allRows);
 
     // Bước 6: Tạo câu hỏi disambiguation nếu có chồng lấp
-    let disambiguationQuestions = [];
+    let disambiguationQuestions: DisambiguationQuestion[] = [];
     if (result.has_overlap && result.discriminating_symptoms.length > 0) {
       disambiguationQuestions = await generateDisambiguationQuestions(
         result.discriminating_symptoms,
