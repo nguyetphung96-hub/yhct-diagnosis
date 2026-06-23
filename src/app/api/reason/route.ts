@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
 import { generateDisambiguationQuestions, generateExplanationNarrative, normalizeFeatureAnswer } from '@/lib/openai';
 import { runReasoning } from '@/lib/reasoning';
-import { ReasonRequest, ReasonResponse } from '@/types';
+import { ReasonRequest, ReasonResponse, DisambiguationQuestion } from '@/types';
 
 export async function POST(req: NextRequest) {
   try {
