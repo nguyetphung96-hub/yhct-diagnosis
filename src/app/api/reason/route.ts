@@ -5,7 +5,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
-import { generateDisambiguationQuestions } from '@/lib/openai';
 import { runReasoning, parseRawAnswerToFeatures } from '@/lib/reasoning';
 import { ReasonRequest, ReasonResponse, DisambiguationQuestion } from '@/types';
 
@@ -47,14 +46,15 @@ export async function POST(req: NextRequest) {
     // Chạy Reasoning Engine (Bước 3–5)
     const result = await runReasoning(symptoms, normalizedAnswers, allRows);
 
-    // Bước 6: Tạo câu hỏi disambiguation nếu có chồng lấp
-    let disambiguationQuestions: DisambiguationQuestion[] = [];
-    if (result.has_overlap && result.discriminating_symptoms.length > 0) {
-      disambiguationQuestions = await generateDisambiguationQuestions(
-        result.discriminating_symptoms,
-        result.optimal_syndromes.map(s => s.syndrome)
-      );
-    }
+    // Bước 6: Tạo câu hỏi disambiguation bằng template (không dùng LLM để tránh timeout)
+    // Reasoning engine đã chọn triệu chứng phân biệt; template đủ để hỏi bác sĩ
+    const disambiguationQuestions: DisambiguationQuestion[] = result.has_overlap
+      ? result.discriminating_symptoms.map(symptom => ({
+          symptom,
+          question: `Bệnh nhân có biểu hiện "${symptom}" không?`,
+          related_syndromes: result.optimal_syndromes.map(s => s.syndrome),
+        }))
+      : [];
 
     // Giải thích tự nhiên được sinh ở finalize route (tránh timeout Vercel 10s)
     const response: ReasonResponse = {
