@@ -12,12 +12,13 @@ export async function extractSymptoms(
   clinicalText: string,
   knownSymptoms: string[]
 ): Promise<ExtractedSymptom[]> {
-  const knownList = knownSymptoms.slice(0, 200).join(', ');
+  // Gửi toàn bộ danh sách (không cắt) để LLM chuẩn hóa chính xác nhất
+  const knownList = knownSymptoms.join(', ');
 
   const response = await openai.chat.completions.create({
     model: MODEL,
     temperature: 0.1,
-    max_tokens: 800,
+    max_tokens: 1000,
     response_format: { type: 'json_object' },
     messages: [
       {
@@ -28,12 +29,13 @@ Danh sách thuật ngữ chuẩn trong hệ thống:
 ${knownList}
 
 Quy tắc:
-1. Chỉ trích xuất các triệu chứng, dấu hiệu lâm sàng thực sự
-2. Ánh xạ sang tên chuẩn trong danh sách nếu có thể
-3. Nếu không có trong danh sách, giữ nguyên tên chuẩn YHCT
+1. Chỉ trích xuất các triệu chứng, dấu hiệu lâm sàng thực sự có trong văn bản
+2. Nếu triệu chứng khớp hoặc đồng nghĩa với tên trong danh sách, dùng chính xác tên đó làm "normalized"
+3. Nếu không có trong danh sách, dùng tên chuẩn YHCT tiếng Việt
 4. KHÔNG bịa thêm triệu chứng không có trong văn bản
+5. Trường "found_in_kb" luôn để true (server sẽ kiểm tra lại)
 
-Trả về JSON: { "symptoms": [{ "original": "...", "normalized": "...", "found_in_kb": true/false }] }`,
+Trả về JSON: { "symptoms": [{ "original": "...", "normalized": "...", "found_in_kb": true }] }`,
       },
       {
         role: 'user',

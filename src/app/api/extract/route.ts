@@ -25,14 +25,21 @@ export async function POST(req: NextRequest) {
     const knownSymptoms = [...new Set(allRows.map(r => r.symptom))];
 
     // Bước 1: Trích xuất và chuẩn hóa triệu chứng
-    const extracted = await extractSymptoms(clinical_text, knownSymptoms);
+    const extractedRaw = await extractSymptoms(clinical_text, knownSymptoms);
 
-    if (extracted.length === 0) {
+    if (extractedRaw.length === 0) {
       return NextResponse.json(
         { error: 'Không trích xuất được triệu chứng. Vui lòng mô tả chi tiết hơn.' },
         { status: 422 }
       );
     }
+
+    // Kiểm tra found_in_kb phía server (không dựa vào LLM) để tránh sai sót
+    const knownSet = new Set(knownSymptoms.map(s => s.toLowerCase().trim()));
+    const extracted = extractedRaw.map(s => ({
+      ...s,
+      found_in_kb: knownSet.has(s.normalized.toLowerCase().trim()),
+    }));
 
     // Bước 2: Với mỗi triệu chứng tìm thấy trong KB, tạo câu hỏi về đặc điểm
     const featureQuestions = [];

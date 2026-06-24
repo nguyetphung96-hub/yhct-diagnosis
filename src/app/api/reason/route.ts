@@ -5,8 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
-import { generateDisambiguationQuestions, generateExplanationNarrative, normalizeFeatureAnswer } from '@/lib/openai';
-import { runReasoning } from '@/lib/reasoning';
+import { generateDisambiguationQuestions, generateExplanationNarrative } from '@/lib/openai';
+import { runReasoning, parseRawAnswerToFeatures } from '@/lib/reasoning';
 import { ReasonRequest, ReasonResponse, DisambiguationQuestion } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -24,30 +24,25 @@ export async function POST(req: NextRequest) {
     // Lấy toàn bộ KB
     const allRows = await getAllKnowledge();
 
-    // Chuẩn hóa câu trả lời đặc điểm qua LLM (nếu có raw_answer)
-    const normalizedAnswers = await Promise.all(
-      feature_answers.map(async fa => {
-        if (fa.raw_answer && fa.observed_features.length === 0) {
-          // Tìm các đặc điểm cần khớp của triệu chứng này
-          const relevantRows = allRows.filter(
-            r => r.symptom.toLowerCase() === fa.symptom.toLowerCase() && r.feature
-          );
-          const featuresToMatch = [
-            ...new Set(
-              relevantRows.flatMap(r => r.feature!.split(';').map(f => f.trim())).filter(Boolean)
-            ),
-          ];
-
-          const confirmed = await normalizeFeatureAnswer(
-            fa.symptom,
-            fa.raw_answer,
-            featuresToMatch
-          );
-          return { ...fa, observed_features: confirmed };
-        }
-        return fa;
-      })
-    );
+    // Reasoning Engine: parse raw_answer → observed_features (KHÔNG dùng LLM)
+    // Theo Bảng 2.1: "So khớp đặc điểm" thuộc Reasoning engine, không phải LLM
+    const normalizedAnswers = feature_answers.map(fa => {
+      if (fa.raw_answer && fa.observed_features.length === 0) {
+        // Lấy danh sách đặc điểm từ KB cho triệu chứng này
+        const relevantRows = allRows.filter(
+          r => r.symptom.toLowerCase() === fa.symptom.toLowerCase() && r.feature
+        );
+        const knownFeatures = [
+          ...new Set(
+            relevantRows.flatMap(r => r.feature!.split(';').map(f => f.trim())).filter(Boolean)
+          ),
+        ];
+        // Reasoning: so khớp chuỗi (không gọi LLM)
+        const confirmedFeatures = parseRawAnswerToFeatures(fa.raw_answer, knownFeatures);
+        return { ...fa, observed_features: confirmedFeatures };
+      }
+      return fa;
+    });
 
     // Chạy Reasoning Engine (Bước 3–5)
     const result = await runReasoning(symptoms, normalizedAnswers, allRows);

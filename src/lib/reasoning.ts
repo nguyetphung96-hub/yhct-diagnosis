@@ -287,6 +287,39 @@ function findDiscriminatingSymptoms(
 }
 
 // ============================================================
+// Bước 1 (phần Reasoning): Kiểm tra tồn tại trong KB & loại trùng
+// ============================================================
+
+/** Kiểm tra server-side: triệu chứng có trong KB không (không dùng LLM) */
+export function verifyInKB(normalizedSymptom: string, knownSymptoms: string[]): boolean {
+  const n = norm(normalizedSymptom);
+  return knownSymptoms.some(s => norm(s) === n);
+}
+
+/** Reasoning: parse raw_answer của người dùng thành danh sách đặc điểm khớp KB
+ *  KHÔNG dùng LLM — chỉ so khớp chuỗi với danh sách đặc điểm từ KB
+ */
+export function parseRawAnswerToFeatures(rawAnswer: string, knownFeatures: string[]): string[] {
+  if (!rawAnswer.trim()) return [];
+  const normAnswer = norm(rawAnswer);
+
+  const matched: string[] = [];
+  for (const feature of knownFeatures) {
+    const normFeat = norm(feature);
+    // Khớp khi đặc điểm KB xuất hiện trong câu trả lời (hoặc ngược lại nếu câu ngắn)
+    if (normAnswer.includes(normFeat) || (normFeat.length >= 4 && normFeat.includes(normAnswer.split(' ')[0]))) {
+      matched.push(feature);
+    }
+  }
+
+  // Nếu không khớp term nào nhưng user đã nhập → giữ raw text để tính fit một phần
+  if (matched.length === 0 && rawAnswer.trim().length >= 2) {
+    return [rawAnswer.trim()];
+  }
+  return matched;
+}
+
+// ============================================================
 // HÀM CHÍNH: Chạy toàn bộ Reasoning Engine
 // ============================================================
 
