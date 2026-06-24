@@ -132,7 +132,7 @@ function computeSyndromeScore(
   const matchedSymptoms: MatchedSymptom[] = [];
   let matchedCount = 0;
 
-  // Lặp qua từng triệu chứng DUY NHẤT của hội chứng (không lặp theo dòng)
+  // Lặp qua từng triệu chứng DUY NHẤT của hội chứng
   for (const kbSymptom of syndromeUniqueSymptoms) {
     // Lấy tất cả dòng KB cho triệu chứng này trong hội chứng
     const symptomRows = syndromeRows.filter(r => r.symptom === kbSymptom);
@@ -143,46 +143,34 @@ function computeSyndromeScore(
       symptomsMatch(ps, kbSymptom, synonyms)
     );
 
-    // Triệu chứng vắng mặt → fit = 0, không cộng vào tổng
+    // Triệu chứng vắng mặt → điểm triệu chứng = 0 (không cộng)
     if (!matchingPatientSymptom) continue;
 
-    // Lấy đặc điểm đã quan sát
+    // Lấy đặc điểm đã quan sát (từ bước hỏi đặc điểm trước)
     const observedFeatures =
       featuresMap.get(norm(kbSymptom)) ||
       featuresMap.get(norm(matchingPatientSymptom)) ||
       [];
 
-    // Lấy fit CAO NHẤT trong tất cả các dòng của triệu chứng này
-    // (tránh cộng nhiều lần cùng một triệu chứng → score > 1.0)
-    let bestFit = 0;
-    let bestRow: KnowledgeRow = symptomRows[0];
-    for (const row of symptomRows) {
-      const fit = computeFitScore(observedFeatures, row.feature);
-      if (fit > bestFit) {
-        bestFit = fit;
-        bestRow = row;
-      }
-    }
+    // Tính fit cho TẤT CẢ dòng của triệu chứng này
+    // (mỗi dòng là một tổ hợp đặc điểm khác nhau của cùng một triệu chứng)
+    const rowFits = symptomRows.map(row => computeFitScore(observedFeatures, row.feature));
 
-    // Nếu không có đặc điểm nào để so khớp nhưng triệu chứng có mặt
-    // → dùng dòng không có đặc điểm (fit=1) nếu tồn tại
-    if (bestFit === 0) {
-      const noFeatureRow = symptomRows.find(r => !r.feature || r.feature.trim() === '');
-      if (noFeatureRow) {
-        bestFit = 1;
-        bestRow = noFeatureRow;
-      }
-    }
+    // Điểm triệu chứng = TRUNG BÌNH fit của tất cả dòng → [0, 1]
+    const symptomScore = rowFits.reduce((a, b) => a + b, 0) / rowFits.length;
 
-    totalFit += bestFit;
+    totalFit += symptomScore;
 
-    if (bestFit > 0) {
+    if (symptomScore > 0) {
       matchedCount++;
+      // Dùng dòng có fit cao nhất để hiển thị giải thích
+      const bestIdx = rowFits.indexOf(Math.max(...rowFits));
+      const bestRow = symptomRows[bestIdx];
       matchedSymptoms.push({
         symptom: kbSymptom,
         feature: bestRow.feature,
         mechanism: bestRow.mechanism,
-        fit_score: bestFit,
+        fit_score: symptomScore,
       });
     }
   }
