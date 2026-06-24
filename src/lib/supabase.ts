@@ -11,8 +11,18 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 // Hàm truy vấn cơ sở tri thức
 // ============================================================
 
-/** Lấy toàn bộ cơ sở tri thức */
+// Cache KB trong memory để tránh query lại 1577 rows mỗi request (giảm ~2-3s/call)
+let _kbCache: KnowledgeRow[] | null = null;
+let _kbCacheTime = 0;
+const KB_CACHE_TTL = 10 * 60 * 1000; // 10 phút
+
+/** Lấy toàn bộ cơ sở tri thức (có cache memory) */
 export async function getAllKnowledge(): Promise<KnowledgeRow[]> {
+  const now = Date.now();
+  if (_kbCache && now - _kbCacheTime < KB_CACHE_TTL) {
+    return _kbCache;
+  }
+
   const { data, error } = await supabase
     .from('knowledge_base')
     .select('*')
@@ -20,7 +30,9 @@ export async function getAllKnowledge(): Promise<KnowledgeRow[]> {
     .order('symptom');
 
   if (error) throw new Error(`Lỗi truy vấn KB: ${error.message}`);
-  return data as KnowledgeRow[];
+  _kbCache = data as KnowledgeRow[];
+  _kbCacheTime = now;
+  return _kbCache;
 }
 
 /** Tìm các hàng tri thức liên quan đến danh sách triệu chứng */

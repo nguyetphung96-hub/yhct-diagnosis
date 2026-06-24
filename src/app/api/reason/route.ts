@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
-import { generateDisambiguationQuestions, generateExplanationNarrative } from '@/lib/openai';
+import { generateDisambiguationQuestions } from '@/lib/openai';
 import { runReasoning, parseRawAnswerToFeatures } from '@/lib/reasoning';
 import { ReasonRequest, ReasonResponse, DisambiguationQuestion } from '@/types';
 
@@ -56,19 +56,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Tạo giải thích tự nhiên (chỉ nếu là kết quả cuối)
-    let explanation_narrative = '';
-    if (result.is_final && result.optimal_syndromes.length > 0) {
-      explanation_narrative = await generateExplanationNarrative(
-        result.optimal_syndromes,
-        normalizedAnswers
-      );
-    }
-
+    // Giải thích tự nhiên được sinh ở finalize route (tránh timeout Vercel 10s)
     const response: ReasonResponse = {
       result,
       disambiguation_questions: disambiguationQuestions,
-      explanation_narrative,
+      explanation_narrative: '',
     };
 
     return NextResponse.json(response);
