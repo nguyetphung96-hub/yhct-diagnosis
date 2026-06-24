@@ -113,7 +113,11 @@ function computeFitScore(
 
 // ============================================================
 // Bước 4: Tính điểm hội chứng
-// Score(s) = Σfit(p,r) / |T_S|
+// Score(s) = Σ best_fit(p) / |T_S|
+// Với mỗi triệu chứng duy nhất p trong hội chứng s:
+//   - Nếu bệnh nhân có p → lấy fit cao nhất trong các dòng KB chứa p
+//   - Nếu bệnh nhân không có p → fit = 0
+// Chia tổng cho |T_S| (số triệu chứng duy nhất của hội chứng) → score ∈ [0, 1]
 // ============================================================
 
 function computeSyndromeScore(
@@ -126,39 +130,62 @@ function computeSyndromeScore(
 
   let totalFit = 0;
   const matchedSymptoms: MatchedSymptom[] = [];
-  const countedSymptoms = new Set<string>(); // Tránh đếm trùng
+  let matchedCount = 0;
 
-  for (const row of syndromeRows) {
-    // Tìm triệu chứng bệnh nhân khớp với hàng này
+  // Lặp qua từng triệu chứng DUY NHẤT của hội chứng (không lặp theo dòng)
+  for (const kbSymptom of syndromeUniqueSymptoms) {
+    // Lấy tất cả dòng KB cho triệu chứng này trong hội chứng
+    const symptomRows = syndromeRows.filter(r => r.symptom === kbSymptom);
+    const synonyms = symptomRows[0]?.synonym || null;
+
+    // Tìm triệu chứng bệnh nhân khớp
     const matchingPatientSymptom = patientSymptoms.find(ps =>
-      symptomsMatch(ps, row.symptom, row.synonym)
+      symptomsMatch(ps, kbSymptom, synonyms)
     );
 
-    // Triệu chứng vắng mặt → fit = 0, bỏ qua
+    // Triệu chứng vắng mặt → fit = 0, không cộng vào tổng
     if (!matchingPatientSymptom) continue;
 
-    // Lấy đặc điểm đã quan sát (tìm theo tên chuẩn KB hoặc tên bệnh nhân nhập)
+    // Lấy đặc điểm đã quan sát
     const observedFeatures =
-      featuresMap.get(norm(row.symptom)) ||
+      featuresMap.get(norm(kbSymptom)) ||
       featuresMap.get(norm(matchingPatientSymptom)) ||
       [];
 
-    const fitScore = computeFitScore(observedFeatures, row.feature);
-    totalFit += fitScore;
+    // Lấy fit CAO NHẤT trong tất cả các dòng của triệu chứng này
+    // (tránh cộng nhiều lần cùng một triệu chứng → score > 1.0)
+    let bestFit = 0;
+    let bestRow: KnowledgeRow = symptomRows[0];
+    for (const row of symptomRows) {
+      const fit = computeFitScore(observedFeatures, row.feature);
+      if (fit > bestFit) {
+        bestFit = fit;
+        bestRow = row;
+      }
+    }
 
-    // Ghi lại để giải thích (chỉ ghi hàng có fit > 0 và chưa ghi triệu chứng này)
-    if (fitScore > 0 && !countedSymptoms.has(row.symptom)) {
+    // Nếu không có đặc điểm nào để so khớp nhưng triệu chứng có mặt
+    // → dùng dòng không có đặc điểm (fit=1) nếu tồn tại
+    if (bestFit === 0) {
+      const noFeatureRow = symptomRows.find(r => !r.feature || r.feature.trim() === '');
+      if (noFeatureRow) {
+        bestFit = 1;
+        bestRow = noFeatureRow;
+      }
+    }
+
+    totalFit += bestFit;
+
+    if (bestFit > 0) {
+      matchedCount++;
       matchedSymptoms.push({
-        symptom: row.symptom,
-        feature: row.feature,
-        mechanism: row.mechanism,
-        fit_score: fitScore,
+        symptom: kbSymptom,
+        feature: bestRow.feature,
+        mechanism: bestRow.mechanism,
+        fit_score: bestFit,
       });
-      countedSymptoms.add(row.symptom);
     }
   }
-
-  const matchedCount = countedSymptoms.size;
 
   return {
     score: totalSymptoms > 0 ? totalFit / totalSymptoms : 0,
