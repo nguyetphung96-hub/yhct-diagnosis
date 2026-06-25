@@ -57,8 +57,8 @@ export async function POST(req: NextRequest) {
 
       // Thu thập tất cả đặc điểm duy nhất cần hỏi
       const allFeatures = relevantRows
-        .flatMap(r => r.feature!.split(';').map(f => f.trim()))
-        .filter(Boolean);
+        .flatMap(r => r.feature!.split(/[;,]/).map(f => f.trim()))
+        .filter(f => f.length >= 2);
       const uniqueFeatures = [...new Set(allFeatures)];
 
       if (uniqueFeatures.length > 0) {

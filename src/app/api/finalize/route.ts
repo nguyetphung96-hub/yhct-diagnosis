@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
 import { generateExplanationNarrative } from '@/lib/openai';
-import { updateAndRereason } from '@/lib/reasoning';
+import { updateAndRereason, parseRawAnswerToFeatures } from '@/lib/reasoning';
 import { FinalizeRequest, FinalizeResponse } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -24,10 +24,30 @@ export async function POST(req: NextRequest) {
     // Lấy toàn bộ KB
     const allRows = await getAllKnowledge();
 
+    // Parse raw_answer → observed_features (giống reason route)
+    // Nếu bỏ bước này, feature_answers có observed_features=[] → fit=0 → không chọn được hội chứng
+    const processedAnswers = feature_answers.map(fa => {
+      if (fa.raw_answer && fa.observed_features.length === 0) {
+        const relevantRows = allRows.filter(
+          r => r.symptom.toLowerCase() === fa.symptom.toLowerCase() && r.feature
+        );
+        const knownFeatures = [
+          ...new Set(
+            relevantRows.flatMap(r =>
+              r.feature!.split(/[;,]/).map(f => f.trim())
+            ).filter(f => f.length >= 2)
+          ),
+        ];
+        const confirmedFeatures = parseRawAnswerToFeatures(fa.raw_answer, knownFeatures);
+        return { ...fa, observed_features: confirmedFeatures };
+      }
+      return fa;
+    });
+
     // Bước 7: Cập nhật và suy luận lại
     const result = await updateAndRereason(
       symptoms,
-      feature_answers,
+      processedAnswers,
       confirmed_disambiguation,
       allRows
     );

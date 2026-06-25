@@ -88,9 +88,9 @@ function computeFitScore(
 
   // Trường hợp 2: Hàng có đặc điểm
   const rowFeatures = rowFeature
-    .split(';')
+    .split(/[;,]/)
     .map(f => norm(f.trim()))
-    .filter(Boolean);
+    .filter(f => f.length >= 2);
 
   if (rowFeatures.length === 0) return 1;
 

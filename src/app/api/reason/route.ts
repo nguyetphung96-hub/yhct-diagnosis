@@ -33,7 +33,9 @@ export async function POST(req: NextRequest) {
         );
         const knownFeatures = [
           ...new Set(
-            relevantRows.flatMap(r => r.feature!.split(';').map(f => f.trim())).filter(Boolean)
+            relevantRows.flatMap(r =>
+              r.feature!.split(/[;,]/).map(f => f.trim())
+            ).filter(f => f.length >= 2)
           ),
         ];
         // Reasoning: so khớp chuỗi (không gọi LLM)
