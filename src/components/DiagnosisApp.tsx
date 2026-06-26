@@ -9,8 +9,8 @@ import {
 const initialState: AppState = {
   step: 1, clinical_text: '', extracted_symptoms: [], feature_questions: [],
   feature_answers: [], temp_syndromes: [], disambiguation_questions: [],
-  disambiguation_answers: [], final_result: null, doctor_selected_syndromes: [],
-  loading: false, error: null,
+  disambiguation_answers: [], final_result: null, explanation_narrative: '',
+  doctor_selected_syndromes: [], loading: false, error: null,
 };
 
 function hasChinese(str: string | null): boolean {
@@ -60,10 +60,13 @@ export default function DiagnosisApp() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Lỗi suy luận');
+      // Lưu processed_feature_answers (observed_features đã parse từ server)
+      // để finalize nhận đúng dữ liệu, không bị chênh lệch điểm
+      const savedAnswers = data.processed_feature_answers ?? answersWithRaw;
       if (data.result.is_final || data.disambiguation_questions.length === 0) {
-        setState(s => ({ ...s, step: 4, feature_answers: answersWithRaw, final_result: data.result, loading: false }));
+        setState(s => ({ ...s, step: 4, feature_answers: savedAnswers, final_result: data.result, loading: false }));
       } else {
-        setState(s => ({ ...s, step: 3, feature_answers: answersWithRaw, temp_syndromes: data.result.optimal_syndromes, disambiguation_questions: data.disambiguation_questions, loading: false }));
+        setState(s => ({ ...s, step: 3, feature_answers: savedAnswers, temp_syndromes: data.result.optimal_syndromes, disambiguation_questions: data.disambiguation_questions, loading: false }));
         setDisambigAnswers({});
       }
       setActiveTab(2);
@@ -84,7 +87,7 @@ export default function DiagnosisApp() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Lỗi hoàn tất chẩn đoán');
-      setState(s => ({ ...s, step: 4, final_result: data.result, disambiguation_answers: confirmedDisambiguation, loading: false }));
+      setState(s => ({ ...s, step: 4, final_result: data.result, explanation_narrative: data.explanation_narrative || '', disambiguation_answers: confirmedDisambiguation, loading: false }));
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Lỗi không xác định'); }
   };
 
@@ -394,6 +397,18 @@ export default function DiagnosisApp() {
                         {state.final_result.optimal_syndromes.map((s, i) => (
                           <SyndromeCard key={s.syndrome} stat={s} isPrimary={i === 0} isSelected={state.doctor_selected_syndromes.includes(s.syndrome)} onToggle={() => toggleSelect(s.syndrome)} />
                         ))}
+
+                        {/* Lời giải thích tổng hợp từ LLM (Bước 8) */}
+                        {state.explanation_narrative && (
+                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                            <p className="text-xs font-semibold text-blue-700 mb-2 flex items-center gap-1.5">
+                              <span>✦</span> Lời giải thích tổng hợp
+                            </p>
+                            <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
+                              {state.explanation_narrative}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
 

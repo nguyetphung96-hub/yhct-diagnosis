@@ -1,6 +1,16 @@
 /**
  * API Route: POST /api/reason
- * Bước 3–6: Tính điểm, chọn hội chứng tối ưu, tạo câu hỏi disambiguation
+ *
+ * BƯỚC 3 → 6: Chạy Reasoning Engine
+ *
+ * Luồng:
+ *   1. Parse raw_answer → observed_features (không dùng LLM, chỉ so khớp chuỗi)
+ *   2. Tính điểm hội chứng (Bước 3 & 4)
+ *   3. Chọn tập hội chứng tối ưu K (Bước 5 — Greedy Set Cover)
+ *   4. Tìm triệu chứng phân biệt nếu K có chồng lấp (Bước 6)
+ *   5. Trả về kết quả + câu hỏi disambiguation Level 2 (nếu cần)
+ *   6. Trả về processed_feature_answers để client lưu lại
+ *      (finalize sẽ dùng lại, tránh parse lại từ raw_answer)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -14,42 +24,42 @@ export async function POST(req: NextRequest) {
     const { symptoms, feature_answers } = body;
 
     if (!symptoms || symptoms.length === 0) {
-      return NextResponse.json(
-        { error: 'Danh sách triệu chứng trống' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Danh sách triệu chứng trống' }, { status: 400 });
     }
 
     // Lấy toàn bộ KB
     const allRows = await getAllKnowledge();
 
-    // Reasoning Engine: parse raw_answer → observed_features (KHÔNG dùng LLM)
-    // Theo Bảng 2.1: "So khớp đặc điểm" thuộc Reasoning engine, không phải LLM
-    const normalizedAnswers = feature_answers.map(fa => {
-      if (fa.raw_answer && fa.observed_features.length === 0) {
-        // Lấy danh sách đặc điểm từ KB cho triệu chứng này
-        const relevantRows = allRows.filter(
-          r => r.symptom.toLowerCase() === fa.symptom.toLowerCase() && r.feature
-        );
-        const knownFeatures = [
-          ...new Set(
-            relevantRows.flatMap(r =>
-              r.feature!.split(/[;,]/).map(f => f.trim())
-            ).filter(f => f.length >= 2)
-          ),
-        ];
-        // Reasoning: so khớp chuỗi (không gọi LLM)
-        const confirmedFeatures = parseRawAnswerToFeatures(fa.raw_answer, knownFeatures);
-        return { ...fa, observed_features: confirmedFeatures };
-      }
-      return fa;
+    // ── Parse raw_answer → observed_features ─────────────────────────────────
+    // feature_answers từ client có raw_answer (text bác sĩ nhập) và observed_features = []
+    // Dùng so khớp chuỗi với danh sách đặc điểm từ KB (không dùng LLM)
+    const processedAnswers = feature_answers.map(fa => {
+      // Nếu đã có observed_features (từ lần reason trước) → dùng luôn
+      if (fa.observed_features.length > 0) return fa;
+      // Nếu bác sĩ không nhập gì → observed_features = []
+      if (!fa.raw_answer || !fa.raw_answer.trim()) return fa;
+
+      // Lấy tất cả đặc điểm từ KB cho triệu chứng này
+      const relevantRows = allRows.filter(
+        r => r.symptom === fa.symptom && r.feature && r.feature.trim() !== ''
+      );
+      const knownFeatures = [
+        ...new Set(
+          relevantRows
+            .flatMap(r => r.feature!.split(/[;,]/).map(f => f.trim()))
+            .filter(f => f.length >= 2)
+        ),
+      ];
+
+      const confirmedFeatures = parseRawAnswerToFeatures(fa.raw_answer, knownFeatures);
+      return { ...fa, observed_features: confirmedFeatures };
     });
 
-    // Chạy Reasoning Engine (Bước 3–5)
-    const result = await runReasoning(symptoms, normalizedAnswers, allRows);
+    // ── Bước 3 → 6: Chạy Reasoning Engine ───────────────────────────────────
+    const result = await runReasoning(symptoms, processedAnswers, allRows);
 
-    // Bước 6: Tạo câu hỏi disambiguation bằng template (không dùng LLM để tránh timeout)
-    // Reasoning engine đã chọn triệu chứng phân biệt; template đủ để hỏi bác sĩ
+    // ── Bước 6: Sinh câu hỏi phân biệt (template, không dùng LLM) ────────────
+    // hasOverlap = true → cần hỏi thêm để phân biệt các hội chứng trong K
     const disambiguationQuestions: DisambiguationQuestion[] = result.has_overlap
       ? result.discriminating_symptoms.map(symptom => ({
           symptom,
@@ -58,19 +68,18 @@ export async function POST(req: NextRequest) {
         }))
       : [];
 
-    // Giải thích tự nhiên được sinh ở finalize route (tránh timeout Vercel 10s)
     const response: ReasonResponse = {
       result,
       disambiguation_questions: disambiguationQuestions,
       explanation_narrative: '',
+      // Trả về feature_answers đã parse để client lưu lại vào state
+      // → finalize sẽ nhận observed_features đã có, không cần parse lại
+      processed_feature_answers: processedAnswers,
     };
 
     return NextResponse.json(response);
   } catch (error) {
     console.error('[/api/reason] Error:', error);
-    return NextResponse.json(
-      { error: 'Lỗi hệ thống khi suy luận. Vui lòng thử lại.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Lỗi hệ thống khi suy luận. Vui lòng thử lại.' }, { status: 500 });
   }
 }

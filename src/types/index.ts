@@ -109,6 +109,7 @@ export interface AppState {
 
   // Bước 4: Kết quả cuối
   final_result: ReasoningResult | null;
+  explanation_narrative: string;        // Lời giải thích tổng hợp từ LLM (Bước 8)
   doctor_selected_syndromes: string[];
 
   // Trạng thái UI
@@ -139,6 +140,7 @@ export interface ReasonResponse {
   result: ReasoningResult;
   disambiguation_questions: DisambiguationQuestion[];
   explanation_narrative: string;  // Tóm tắt bằng tiếng Việt từ LLM
+  processed_feature_answers: SymptomFeatures[];  // feature_answers đã parse observed_features
 }
 
 export interface FinalizeRequest {

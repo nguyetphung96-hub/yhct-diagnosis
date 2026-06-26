@@ -1,175 +1,163 @@
 /**
- * Reasoning Engine - Bộ suy luận YHCT
- * Triển khai thuật toán 8 bước theo đề cương luận văn
- * Đây là XAI nội tại (Intrinsic XAI) - toàn bộ logic minh bạch và traceable
+ * Reasoning Engine — Hệ thống Hỗ trợ Chẩn đoán YHCT
+ *
+ * Triển khai thuật toán suy luận 8 bước theo đề cương luận văn.
+ * Toàn bộ logic là XAI nội tại (Intrinsic XAI) — không dùng LLM.
+ *
+ * Cấu trúc KB: mỗi hàng = (syndrome, symptom, synonym, feature, mechanism)
+ *   - Một symptom có thể xuất hiện ở nhiều syndrome (nhiều hàng)
+ *   - Một (syndrome, symptom) có thể có nhiều hàng nếu có nhiều tổ hợp feature
  */
 
-import {
-  KnowledgeRow,
-  SyndromeStat,
-  MatchedSymptom,
-  ReasoningResult,
-  SymptomFeatures,
-} from '@/types';
+import { KnowledgeRow, SyndromeStat, MatchedSymptom, ReasoningResult, SymptomFeatures } from '@/types';
 
 // ============================================================
-// Hàm tiện ích
+// TIỆN ÍCH
 // ============================================================
 
-/** Chuẩn hóa văn bản để so sánh */
-function norm(text: string): string {
+/**
+ * Chuẩn hóa chuỗi để so sánh mờ:
+ * lowercase → chuẩn hóa khoảng trắng → bỏ dấu tiếng Việt
+ */
+export function norm(text: string): string {
   return text
     .toLowerCase()
     .trim()
     .replace(/\s+/g, ' ')
-    .normalize('NFD') // Tách dấu thanh
-    .replace(/[̀-ͯ]/g, '') // Bỏ dấu để so sánh mờ
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
     .normalize('NFC');
 }
 
 /**
- * Kiểm tra xem triệu chứng bệnh nhân có khớp với một hàng KB không
- * Khớp theo: tên chuẩn hoặc bất kỳ synonym nào
+ * Kiểm tra triệu chứng bệnh nhân có khớp với một mục KB không.
+ * Khớp theo: tên chuẩn (exact / substring) HOẶC bất kỳ synonym nào.
+ *
+ * Export để dùng trong extract route khi tìm canonical name.
  */
-function symptomsMatch(
+export function symptomsMatch(
   patientSymptom: string,
   kbSymptom: string,
-  synonyms: string | null
+  synonym: string | null
 ): boolean {
-  const pNorm = norm(patientSymptom);
-  const sNorm = norm(kbSymptom);
+  const p = norm(patientSymptom);
+  const s = norm(kbSymptom);
 
-  // Khớp trực tiếp
-  if (pNorm === sNorm) return true;
-  if (pNorm.includes(sNorm) || sNorm.includes(pNorm)) return true;
+  // So khớp tên chuẩn
+  if (p === s) return true;
+  if (p.length >= 4 && (p.includes(s) || s.includes(p))) return true;
 
-  // Khớp theo synonym
-  if (synonyms) {
-    const synList = synonyms
-      .split(';')
-      .map(s => norm(s.trim()))
-      .filter(Boolean);
-    if (synList.some(syn => pNorm === syn || pNorm.includes(syn) || syn.includes(pNorm))) {
-      return true;
+  // So khớp synonym (phân cách bởi ';')
+  if (synonym) {
+    for (const syn of synonym.split(';').map(x => norm(x.trim())).filter(Boolean)) {
+      if (p === syn) return true;
+      if (syn.length >= 4 && (p.includes(syn) || syn.includes(p))) return true;
     }
   }
 
   return false;
 }
 
-/** Lấy danh sách triệu chứng duy nhất của một hội chứng */
-function getUniqueSymptoms(rows: KnowledgeRow[]): string[] {
-  return [...new Set(rows.map(r => r.symptom))];
-}
-
-/** Nhóm các hàng KB theo hội chứng */
-function groupBySyndrome(rows: KnowledgeRow[]): Map<string, KnowledgeRow[]> {
-  const map = new Map<string, KnowledgeRow[]>();
-  for (const row of rows) {
-    if (!map.has(row.syndrome)) map.set(row.syndrome, []);
-    map.get(row.syndrome)!.push(row);
-  }
-  return map;
-}
-
 // ============================================================
-// Bước 3: Tính điểm phù hợp (fit score)
-// fit(p, r) theo công thức trong đề cương
+// BƯỚC 3 — Tính điểm phù hợp fit(p, r)
+//
+// Với mỗi dòng r trong KB:
+//   - r.feature = NULL/rỗng  → fit = 1  (triệu chứng khớp, không cần đặc điểm)
+//   - r.feature có giá trị
+//       + observedFeatures rỗng  → fit = 0  (có đặc điểm nhưng không có thông tin)
+//       + observedFeatures có giá trị → fit = số_đặc_điểm_khớp / tổng_đặc_điểm_dòng
 // ============================================================
 
 function computeFitScore(
-  observedFeatures: string[],
-  rowFeature: string | null
+  observedFeatures: string[],  // đặc điểm bác sĩ đã xác nhận cho triệu chứng này
+  rowFeature: string | null    // cột feature của dòng KB
 ): number {
-  // Trường hợp 1: Hàng không có đặc điểm → fit = 1
-  if (!rowFeature || rowFeature.trim() === '') {
-    return 1;
-  }
+  // Dòng KB không có đặc điểm → fit = 1
+  if (!rowFeature || rowFeature.trim() === '') return 1;
 
-  // Trường hợp 2: Hàng có đặc điểm
-  const rowFeatures = rowFeature
+  // Parse đặc điểm KB (phân cách bởi ';' hoặc ',')
+  const kbFeatures = rowFeature
     .split(/[;,]/)
-    .map(f => norm(f.trim()))
+    .map(f => f.trim())
     .filter(f => f.length >= 2);
 
-  if (rowFeatures.length === 0) return 1;
+  if (kbFeatures.length === 0) return 1;
 
-  // Không có đặc điểm nào được quan sát → fit = 0
+  // Có đặc điểm KB nhưng không có thông tin bác sĩ → fit = 0
   if (observedFeatures.length === 0) return 0;
 
-  const normalizedObserved = observedFeatures.map(norm);
-
-  // Đếm số đặc điểm khớp
-  let matchCount = 0;
-  for (const rf of rowFeatures) {
-    const matched = normalizedObserved.some(
-      of => of.includes(rf) || rf.includes(of)
-    );
-    if (matched) matchCount++;
+  // Đếm đặc điểm KB khớp với observedFeatures (so sánh mờ)
+  const normObs = observedFeatures.map(norm);
+  let matched = 0;
+  for (const kf of kbFeatures) {
+    const nkf = norm(kf);
+    if (normObs.some(no => no.includes(nkf) || nkf.includes(no))) matched++;
   }
 
-  return matchCount / rowFeatures.length;
+  return matched / kbFeatures.length;
 }
 
 // ============================================================
-// Bước 4: Tính điểm hội chứng
-// Score(s) = Σ best_fit(p) / |T_S|
-// Với mỗi triệu chứng duy nhất p trong hội chứng s:
-//   - Nếu bệnh nhân có p → lấy fit cao nhất trong các dòng KB chứa p
-//   - Nếu bệnh nhân không có p → fit = 0
-// Chia tổng cho |T_S| (số triệu chứng duy nhất của hội chứng) → score ∈ [0, 1]
+// BƯỚC 4 — Tính điểm hội chứng score(s)
+//
+// score(s) = Σ symptomScore(p) / |T_s|
+//
+// T_s = tập triệu chứng duy nhất của hội chứng s
+// Với mỗi p ∈ T_s:
+//   - Bệnh nhân không có p → symptomScore(p) = 0 (không cộng vào Σ, nhưng vẫn tính vào mẫu |T_s|)
+//   - Bệnh nhân có p       → symptomScore(p) = trung bình fit của tất cả dòng (s, p) trong KB
 // ============================================================
 
 function computeSyndromeScore(
   patientSymptoms: string[],
-  featuresMap: Map<string, string[]>, // symptom → observed features
-  syndromeRows: KnowledgeRow[]
-): { score: number; matchedSymptoms: MatchedSymptom[]; totalSymptoms: number; matchedCount: number } {
-  const syndromeUniqueSymptoms = getUniqueSymptoms(syndromeRows);
-  const totalSymptoms = syndromeUniqueSymptoms.length;
+  featuresMap: Map<string, string[]>,  // norm(canonical symptom name) → observed features
+  syndromeRows: KnowledgeRow[]         // tất cả dòng KB của hội chứng này
+): {
+  score: number;
+  matchedSymptoms: MatchedSymptom[];
+  totalSymptoms: number;  // |T_s|
+  matchedCount: number;   // số triệu chứng bệnh nhân khớp
+} {
+  // Lấy tập triệu chứng duy nhất T_s
+  const uniqueKBSymptoms = [...new Set(syndromeRows.map(r => r.symptom))];
+  const totalSymptoms = uniqueKBSymptoms.length;
 
   let totalFit = 0;
-  const matchedSymptoms: MatchedSymptom[] = [];
   let matchedCount = 0;
+  const matchedSymptoms: MatchedSymptom[] = [];
 
-  // Lặp qua từng triệu chứng DUY NHẤT của hội chứng
-  for (const kbSymptom of syndromeUniqueSymptoms) {
-    // Lấy tất cả dòng KB cho triệu chứng này trong hội chứng
-    const symptomRows = syndromeRows.filter(r => r.symptom === kbSymptom);
-    const synonyms = symptomRows[0]?.synonym || null;
+  for (const kbSym of uniqueKBSymptoms) {
+    // Lấy tất cả dòng KB của (syndrome, symptom) này
+    const rows = syndromeRows.filter(r => r.symptom === kbSym);
+    const synonym = rows[0]?.synonym ?? null;
 
-    // Tìm triệu chứng bệnh nhân khớp
-    const matchingPatientSymptom = patientSymptoms.find(ps =>
-      symptomsMatch(ps, kbSymptom, synonyms)
-    );
+    // Tìm triệu chứng bệnh nhân khớp với kbSym (qua tên hoặc synonym)
+    const patientSym = patientSymptoms.find(ps => symptomsMatch(ps, kbSym, synonym));
 
-    // Triệu chứng vắng mặt → điểm triệu chứng = 0 (không cộng)
-    if (!matchingPatientSymptom) continue;
+    // Bệnh nhân không có triệu chứng này → symptomScore = 0, bỏ qua (mẫu vẫn là |T_s|)
+    if (!patientSym) continue;
 
-    // Lấy đặc điểm đã quan sát (từ bước hỏi đặc điểm trước)
-    const observedFeatures =
-      featuresMap.get(norm(kbSymptom)) ||
-      featuresMap.get(norm(matchingPatientSymptom)) ||
+    // Lấy đặc điểm bác sĩ đã cung cấp
+    // Ưu tiên tra theo canonical KB name, fallback sang patient term
+    const observed =
+      featuresMap.get(norm(kbSym)) ??
+      featuresMap.get(norm(patientSym)) ??
       [];
 
-    // Tính fit cho TẤT CẢ dòng của triệu chứng này
-    // (mỗi dòng là một tổ hợp đặc điểm khác nhau của cùng một triệu chứng)
-    const rowFits = symptomRows.map(row => computeFitScore(observedFeatures, row.feature));
-
-    // Điểm triệu chứng = TRUNG BÌNH fit của tất cả dòng → [0, 1]
-    const symptomScore = rowFits.reduce((a, b) => a + b, 0) / rowFits.length;
+    // Tính fit cho TẤT CẢ dòng của (s, p), rồi lấy trung bình
+    const fits = rows.map(r => computeFitScore(observed, r.feature));
+    const symptomScore = fits.reduce((a, b) => a + b, 0) / fits.length;
 
     totalFit += symptomScore;
 
     if (symptomScore > 0) {
       matchedCount++;
-      // Dùng dòng có fit cao nhất để hiển thị giải thích
-      const bestIdx = rowFits.indexOf(Math.max(...rowFits));
-      const bestRow = symptomRows[bestIdx];
+      // Lấy dòng có fit cao nhất để hiển thị giải thích
+      const bestIdx = fits.indexOf(Math.max(...fits));
       matchedSymptoms.push({
-        symptom: kbSymptom,
-        feature: bestRow.feature,
-        mechanism: bestRow.mechanism,
+        symptom: kbSym,
+        feature: rows[bestIdx].feature,
+        mechanism: rows[bestIdx].mechanism,
         fit_score: symptomScore,
       });
     }
@@ -184,7 +172,23 @@ function computeSyndromeScore(
 }
 
 // ============================================================
-// Bước 5: Chọn tập hội chứng tối ưu (Greedy Set Cover)
+// BƯỚC 5 — Greedy Set Cover
+//
+// Tìm tập K ⊆ {hội chứng có điểm > 0} sao cho:
+//   - Giải thích được tối đa triệu chứng bệnh nhân
+//   - Với số lượng hội chứng ít nhất
+//
+// Thuật toán:
+//   1. Sắp xếp hội chứng theo điểm giảm dần
+//   2. Chọn hội chứng điểm cao nhất vào K
+//   3. Với mỗi hội chứng còn lại: thêm vào K nếu và chỉ nếu
+//      giải thích được ít nhất 1 triệu chứng bệnh nhân MỚI
+//      (chưa được hội chứng nào trong K giải thích)
+//   4. Dừng khi đã giải thích hết P hoặc không còn hội chứng nào bổ sung
+//
+// Sau khi có K: kiểm tra chồng lấp triệu chứng KB giữa các cặp hội chứng
+//   → hasOverlap = true  → cần bước 6, 7
+//   → hasOverlap = false → bỏ qua bước 6, 7, đến bước 8
 // ============================================================
 
 function greedySetCover(
@@ -193,55 +197,49 @@ function greedySetCover(
   syndromeSymptomMap: Map<string, string[]>,
   allRows: KnowledgeRow[]
 ): { selectedSyndromes: SyndromeStat[]; hasOverlap: boolean } {
-  if (syndromeScores.length === 0) {
-    return { selectedSyndromes: [], hasOverlap: false };
-  }
+  if (syndromeScores.length === 0) return { selectedSyndromes: [], hasOverlap: false };
 
   // Sắp xếp theo điểm giảm dần
   const sorted = [...syndromeScores].sort((a, b) => b.score - a.score);
 
-  const selected: SyndromeStat[] = [];
-  const coveredPatientSymptoms = new Set<string>();
+  const K: SyndromeStat[] = [];
+  const covered = new Set<string>(); // norm(patient_symptom) đã được giải thích
 
-  // Hàm kiểm tra hội chứng có bao phủ triệu chứng bệnh nhân nào mới không
-  const getNewlyCovered = (syndrome: string): string[] => {
-    const sRows = allRows.filter(r => r.syndrome === syndrome);
+  /**
+   * Trả về danh sách triệu chứng bệnh nhân mà syndrome này giải thích được
+   * và chưa có trong covered (triệu chứng MỚI)
+   */
+  const getNewCoverage = (syndromeName: string): string[] => {
+    const rows = allRows.filter(r => r.syndrome === syndromeName);
     return patientSymptoms.filter(ps => {
-      const matchesKB = sRows.some(r => symptomsMatch(ps, r.symptom, r.synonym));
-      return matchesKB && !coveredPatientSymptoms.has(norm(ps));
+      if (covered.has(norm(ps))) return false; // đã được giải thích rồi
+      return rows.some(r => symptomsMatch(ps, r.symptom, r.synonym));
     });
   };
 
-  // Thêm hội chứng đầu tiên (điểm cao nhất)
-  selected.push(sorted[0]);
-  const firstNewlyCovered = getNewlyCovered(sorted[0].syndrome);
-  firstNewlyCovered.forEach(s => coveredPatientSymptoms.add(norm(s)));
+  for (const s of sorted) {
+    const newCoverage = getNewCoverage(s.syndrome);
 
-  // Thêm các hội chứng tiếp theo nếu giải thích được triệu chứng mới
-  for (let i = 1; i < sorted.length; i++) {
-    const candidate = sorted[i];
-    // Ngưỡng tối thiểu: điểm > 0.1 để loại bỏ hội chứng không liên quan
-    if (candidate.score < 0.05) break;
-
-    const newlyCovered = getNewlyCovered(candidate.syndrome);
-    if (newlyCovered.length > 0) {
-      selected.push(candidate);
-      newlyCovered.forEach(s => coveredPatientSymptoms.add(norm(s)));
+    if (K.length === 0) {
+      // Luôn chọn hội chứng điểm cao nhất làm điểm khởi đầu
+      K.push(s);
+      newCoverage.forEach(ps => covered.add(norm(ps)));
+    } else if (newCoverage.length > 0) {
+      // Chỉ thêm nếu giải thích được ít nhất 1 triệu chứng MỚI
+      K.push(s);
+      newCoverage.forEach(ps => covered.add(norm(ps)));
     }
 
-    // Dừng khi đã bao phủ hết triệu chứng bệnh nhân
-    if (coveredPatientSymptoms.size >= patientSymptoms.length) break;
-
-    // Giới hạn tối đa 4 hội chứng để tránh phân tán
-    if (selected.length >= 4) break;
+    // Dừng sớm nếu đã giải thích hết tất cả triệu chứng bệnh nhân
+    if (covered.size >= patientSymptoms.length) break;
   }
 
-  // Kiểm tra chồng lấp: có cặp hội chứng nào chia sẻ triệu chứng không?
+  // Kiểm tra chồng lấp: có cặp (Si, Sj) nào chia sẻ triệu chứng KB không?
   let hasOverlap = false;
-  if (selected.length > 1) {
-    const symptomSets = selected.map(s => {
-      const sSymptoms = syndromeSymptomMap.get(s.syndrome) || [];
-      return new Set(sSymptoms.map(sym => norm(sym)));
+  if (K.length > 1) {
+    const symptomSets = K.map(s => {
+      const syms = syndromeSymptomMap.get(s.syndrome) || [];
+      return new Set(syms.map(norm));
     });
 
     outer: for (let i = 0; i < symptomSets.length; i++) {
@@ -256,136 +254,154 @@ function greedySetCover(
     }
   }
 
-  return { selectedSyndromes: selected, hasOverlap };
+  return { selectedSyndromes: K, hasOverlap };
 }
 
 // ============================================================
-// Bước 6: Tính triệu chứng phân biệt (Discriminating Symptoms)
+// BƯỚC 6 — Tìm tập triệu chứng phân biệt
+//
+// Chỉ chạy khi hasOverlap = true (K có hội chứng chia sẻ triệu chứng)
+//
+// Với mỗi Si ∈ K:
+//   Di = { sym ∈ T_Si | sym ∉ T_Sj ∀ Sj ∈ K, j ≠ i }
+//   (triệu chứng đặc trưng riêng của Si, không chia sẻ với hội chứng nào khác trong K)
+//
+// Loại bỏ từ Di những triệu chứng bệnh nhân đã có trong P
+// (dùng symptomsMatch với synonym để tránh hỏi lại VD "chóng mặt" = "Váng đầu mắt hoa")
+//
+// Trả về ∪ Di (tất cả triệu chứng phân biệt cần hỏi)
 // ============================================================
 
 function findDiscriminatingSymptoms(
-  selectedSyndromes: SyndromeStat[],
+  K: SyndromeStat[],
   syndromeSymptomMap: Map<string, string[]>,
-  patientSymptoms: string[]
+  patientSymptoms: string[],
+  allRows: KnowledgeRow[]
 ): string[] {
-  if (selectedSyndromes.length <= 1) return [];
+  const discriminating: string[] = [];
 
-  const allDiscriminating: string[] = [];
+  for (const si of K) {
+    const siSyms = syndromeSymptomMap.get(si.syndrome) || [];
 
-  for (const ss of selectedSyndromes) {
-    const sSymptoms = syndromeSymptomMap.get(ss.syndrome) || [];
-
-    // Triệu chứng duy nhất của hội chứng này (không chia sẻ với hội chứng khác)
-    const uniqueToThis = sSymptoms.filter(sym => {
-      const normSym = norm(sym);
-      return !selectedSyndromes.some(
-        other =>
-          other.syndrome !== ss.syndrome &&
-          (syndromeSymptomMap.get(other.syndrome) || []).some(
-            otherSym => norm(otherSym) === normSym
-          )
+    // Di: triệu chứng chỉ thuộc Si, không thuộc bất kỳ Sj nào khác trong K
+    const Di = siSyms.filter(sym => {
+      const nSym = norm(sym);
+      return !K.some(
+        sj =>
+          sj.syndrome !== si.syndrome &&
+          (syndromeSymptomMap.get(sj.syndrome) || []).some(s => norm(s) === nSym)
       );
     });
 
-    // Lọc ra triệu chứng chưa có ở bệnh nhân
-    for (const uniqueSym of uniqueToThis) {
-      const patientHas = patientSymptoms.some(ps =>
-        symptomsMatch(ps, uniqueSym, null)
-      );
-      if (!patientHas && !allDiscriminating.includes(uniqueSym)) {
-        allDiscriminating.push(uniqueSym);
+    // Loại bỏ những gì bệnh nhân đã có trong P
+    for (const sym of Di) {
+      // Tra synonym từ KB để so sánh chính xác
+      const kbRow = allRows.find(r => r.symptom === sym);
+      const synonym = kbRow?.synonym ?? null;
+      const patientAlreadyHas = patientSymptoms.some(ps => symptomsMatch(ps, sym, synonym));
+
+      if (!patientAlreadyHas && !discriminating.includes(sym)) {
+        discriminating.push(sym);
       }
     }
   }
 
-  return allDiscriminating;
+  return discriminating;
 }
 
 // ============================================================
-// Bước 1 (phần Reasoning): Kiểm tra tồn tại trong KB & loại trùng
+// HÀM PHỤ TRỢ — Parse câu trả lời thô → observed features
+//
+// Dùng trong route handler để chuyển raw_answer (text của bác sĩ)
+// thành danh sách đặc điểm khớp với KB (không dùng LLM)
 // ============================================================
 
-/** Kiểm tra server-side: triệu chứng có trong KB không (không dùng LLM) */
-export function verifyInKB(normalizedSymptom: string, knownSymptoms: string[]): boolean {
-  const n = norm(normalizedSymptom);
-  return knownSymptoms.some(s => norm(s) === n);
-}
-
-/** Reasoning: parse raw_answer của người dùng thành danh sách đặc điểm khớp KB
- *  KHÔNG dùng LLM — chỉ so khớp chuỗi với danh sách đặc điểm từ KB
- */
-export function parseRawAnswerToFeatures(rawAnswer: string, knownFeatures: string[]): string[] {
+export function parseRawAnswerToFeatures(
+  rawAnswer: string,
+  knownFeatures: string[]  // đặc điểm từ KB cho triệu chứng này
+): string[] {
   if (!rawAnswer.trim()) return [];
-  const normAnswer = norm(rawAnswer);
 
+  const normAnswer = norm(rawAnswer);
   const matched: string[] = [];
-  for (const feature of knownFeatures) {
-    const normFeat = norm(feature);
-    // Khớp khi đặc điểm KB xuất hiện trong câu trả lời (hoặc ngược lại nếu câu ngắn)
-    if (normAnswer.includes(normFeat) || (normFeat.length >= 4 && normFeat.includes(normAnswer.split(' ')[0]))) {
-      matched.push(feature);
+
+  for (const feat of knownFeatures) {
+    const nFeat = norm(feat);
+    // Khớp nếu đặc điểm KB xuất hiện trong câu trả lời của bác sĩ
+    if (normAnswer.includes(nFeat)) {
+      matched.push(feat);
+      continue;
+    }
+    // Khớp ngược: từng từ trong đặc điểm KB đều có trong câu trả lời
+    if (nFeat.length >= 4) {
+      const words = nFeat.split(' ').filter(w => w.length >= 3);
+      if (words.length > 0 && words.every(w => normAnswer.includes(w))) {
+        matched.push(feat);
+      }
     }
   }
 
-  // Nếu không khớp term nào nhưng user đã nhập → giữ raw text để tính fit một phần
+  // Nếu không khớp term nào nhưng bác sĩ đã nhập → giữ raw text
+  // (để computeFitScore có thể tính partial match)
   if (matched.length === 0 && rawAnswer.trim().length >= 2) {
     return [rawAnswer.trim()];
   }
+
   return matched;
 }
 
 // ============================================================
-// HÀM CHÍNH: Chạy toàn bộ Reasoning Engine
+// HÀM CHÍNH — runReasoning (Bước 3 → 6)
 // ============================================================
 
 export async function runReasoning(
-  patientSymptoms: string[],
-  featureAnswers: SymptomFeatures[],
+  patientSymptoms: string[],       // triệu chứng bệnh nhân đã được chuẩn hóa (canonical KB names)
+  featureAnswers: SymptomFeatures[], // đặc điểm đã parse (observed_features đã có)
   allKnowledgeRows: KnowledgeRow[]
 ): Promise<ReasoningResult> {
-  // Xây dựng map đặc điểm: tên triệu chứng → danh sách đặc điểm quan sát
+
+  // Xây dựng featuresMap: norm(canonical_symptom) → observed_features
   const featuresMap = new Map<string, string[]>();
   for (const fa of featureAnswers) {
     featuresMap.set(norm(fa.symptom), fa.observed_features);
   }
 
   // Nhóm KB theo hội chứng
-  const bySyndrome = groupBySyndrome(allKnowledgeRows);
-
-  // Xây dựng map: hội chứng → danh sách triệu chứng duy nhất
-  const syndromeSymptomMap = new Map<string, string[]>();
-  for (const [syndrome, rows] of bySyndrome) {
-    syndromeSymptomMap.set(syndrome, getUniqueSymptoms(rows));
+  const bySyndrome = new Map<string, KnowledgeRow[]>();
+  for (const row of allKnowledgeRows) {
+    if (!bySyndrome.has(row.syndrome)) bySyndrome.set(row.syndrome, []);
+    bySyndrome.get(row.syndrome)!.push(row);
   }
 
-  // --- Bước 3 & 4: Tính điểm cho tất cả hội chứng ---
+  // Map: syndrome → danh sách triệu chứng duy nhất (T_s)
+  const syndromeSymptomMap = new Map<string, string[]>();
+  for (const [syndrome, rows] of bySyndrome) {
+    syndromeSymptomMap.set(syndrome, [...new Set(rows.map(r => r.symptom))]);
+  }
+
+  // ── Bước 3 & 4: Tính điểm tất cả hội chứng ──────────────────
   const allSyndromeStats: SyndromeStat[] = [];
 
   for (const [syndrome, rows] of bySyndrome) {
-    // Chỉ tính hội chứng có ít nhất 1 triệu chứng khớp với bệnh nhân
-    const hasAnyMatch = patientSymptoms.some(ps =>
+    // Bỏ qua nếu không có triệu chứng nào của bệnh nhân khớp
+    const anyMatch = patientSymptoms.some(ps =>
       rows.some(r => symptomsMatch(ps, r.symptom, r.synonym))
     );
-    if (!hasAnyMatch) continue;
+    if (!anyMatch) continue;
 
     const { score, matchedSymptoms, totalSymptoms, matchedCount } =
       computeSyndromeScore(patientSymptoms, featuresMap, rows);
 
+    // Chỉ đưa vào danh sách nếu có điểm > 0
     if (score > 0) {
-      allSyndromeStats.push({
-        syndrome,
-        score,
-        matched_symptoms: matchedSymptoms,
-        total_syndrome_symptoms: totalSymptoms,
-        matched_count: matchedCount,
-      });
+      allSyndromeStats.push({ syndrome, score, matched_symptoms: matchedSymptoms, total_syndrome_symptoms: totalSymptoms, matched_count: matchedCount });
     }
   }
 
   // Sắp xếp theo điểm giảm dần
   allSyndromeStats.sort((a, b) => b.score - a.score);
 
-  // --- Bước 5: Greedy Set Cover ---
+  // ── Bước 5: Greedy Set Cover → K ────────────────────────────
   const { selectedSyndromes, hasOverlap } = greedySetCover(
     patientSymptoms,
     allSyndromeStats,
@@ -393,25 +409,18 @@ export async function runReasoning(
     allKnowledgeRows
   );
 
-  // --- Bước 6: Tính triệu chứng phân biệt (nếu có chồng lấp) ---
+  // ── Bước 6: Triệu chứng phân biệt (chỉ khi có chồng lấp) ───
+  // Nếu không có chồng lấp → bỏ qua bước 6 & 7, đến thẳng bước 8
   const discriminatingSymptoms = hasOverlap
-    ? findDiscriminatingSymptoms(selectedSyndromes, syndromeSymptomMap, patientSymptoms)
+    ? findDiscriminatingSymptoms(selectedSyndromes, syndromeSymptomMap, patientSymptoms, allKnowledgeRows)
     : [];
 
-  // Xác định độ tin cậy
-  let confidence: 'cao' | 'trung_bình' | 'thấp' = 'thấp';
-  if (selectedSyndromes.length > 0) {
-    const topScore = selectedSyndromes[0].score;
-    if (topScore >= 0.65) confidence = 'cao';
-    else if (topScore >= 0.35) confidence = 'trung_bình';
-  }
-
-  // Tính triệu chứng đã/chưa giải thích
+  // ── Xác định triệu chứng đã/chưa giải thích ──────────────────
   const coveredSet = new Set<string>();
   for (const ss of selectedSyndromes) {
-    const sRows = allKnowledgeRows.filter(r => r.syndrome === ss.syndrome);
+    const rows = allKnowledgeRows.filter(r => r.syndrome === ss.syndrome);
     for (const ps of patientSymptoms) {
-      if (sRows.some(r => symptomsMatch(ps, r.symptom, r.synonym))) {
+      if (rows.some(r => symptomsMatch(ps, r.symptom, r.synonym))) {
         coveredSet.add(ps);
       }
     }
@@ -419,12 +428,23 @@ export async function runReasoning(
   const coveredSymptoms = patientSymptoms.filter(ps => coveredSet.has(ps));
   const uncoveredSymptoms = patientSymptoms.filter(ps => !coveredSet.has(ps));
 
+  // ── Độ tin cậy ────────────────────────────────────────────────
+  let confidence: 'cao' | 'trung_bình' | 'thấp' = 'thấp';
+  if (selectedSyndromes.length > 0) {
+    const top = selectedSyndromes[0].score;
+    if (top >= 0.65) confidence = 'cao';
+    else if (top >= 0.35) confidence = 'trung_bình';
+  }
+
+  // is_final: không cần hỏi thêm (không chồng lấp, hoặc không có triệu chứng phân biệt)
+  const is_final = !hasOverlap || discriminatingSymptoms.length === 0;
+
   return {
     syndrome_scores: allSyndromeStats,
     optimal_syndromes: selectedSyndromes,
     has_overlap: hasOverlap,
     discriminating_symptoms: discriminatingSymptoms,
-    is_final: !hasOverlap || discriminatingSymptoms.length === 0,
+    is_final,
     covered_symptoms: coveredSymptoms,
     uncovered_symptoms: uncoveredSymptoms,
     confidence,
@@ -432,16 +452,21 @@ export async function runReasoning(
 }
 
 // ============================================================
-// Bước 7: Cập nhật và suy luận lại sau Level-2
+// BƯỚC 7 — Cập nhật và suy luận lại
+//
+// Sau khi bác sĩ trả lời câu hỏi phân biệt (Level 2):
+//   - Thêm triệu chứng bác sĩ xác nhận "Có" vào P
+//   - Chạy lại Bước 3→6 với P đã cập nhật
+//   - Kết quả lần này là kết quả cuối (is_final = true)
 // ============================================================
 
 export async function updateAndRereason(
   patientSymptoms: string[],
   featureAnswers: SymptomFeatures[],
-  confirmedDisambiguation: string[], // Triệu chứng phân biệt được xác nhận
+  confirmedDisambiguation: string[],  // triệu chứng bác sĩ xác nhận "Có" từ bước 6
   allKnowledgeRows: KnowledgeRow[]
 ): Promise<ReasoningResult> {
-  // Bổ sung triệu chứng phân biệt đã xác nhận vào danh sách bệnh nhân
+  // Bổ sung triệu chứng mới đã xác nhận vào P (tránh trùng)
   const updatedSymptoms = [
     ...patientSymptoms,
     ...confirmedDisambiguation.filter(
@@ -449,33 +474,9 @@ export async function updateAndRereason(
     ),
   ];
 
-  // Chạy lại reasoning với danh sách triệu chứng đã cập nhật
-  const result = await runReasoning(
-    updatedSymptoms,
-    featureAnswers,
-    allKnowledgeRows
-  );
+  // Chạy lại toàn bộ bước 3→6 với P đã cập nhật
+  const result = await runReasoning(updatedSymptoms, featureAnswers, allKnowledgeRows);
 
-  // Kết quả sau bước 7 luôn là final
+  // Kết quả sau bước 7 là kết quả cuối
   return { ...result, is_final: true };
-}
-
-// ============================================================
-// Xây dựng chuỗi giải thích cho UI
-// ============================================================
-
-export function buildExplanationChains(
-  syndromes: SyndromeStat[]
-): { syndrome: string; score: number; score_percent: string; steps: { symptom: string; feature: string | null; mechanism: string; fit_score: number }[] }[] {
-  return syndromes.map(ss => ({
-    syndrome: ss.syndrome,
-    score: ss.score,
-    score_percent: `${(ss.score * 100).toFixed(0)}%`,
-    steps: ss.matched_symptoms.map(ms => ({
-      symptom: ms.symptom,
-      feature: ms.feature,
-      mechanism: ms.mechanism,
-      fit_score: ms.fit_score,
-    })),
-  }));
 }

@@ -1,10 +1,19 @@
 /**
  * API Route: POST /api/extract
- * Bước 1 & 2: Trích xuất triệu chứng + tạo câu hỏi Level 1
+ *
+ * BƯỚC 1 — Trích xuất và chuẩn hóa triệu chứng (LLM)
+ *   Input : văn bản lâm sàng tự do
+ *   Output: danh sách triệu chứng đã chuẩn hóa về canonical KB name
+ *
+ * BƯỚC 2 — Tạo câu hỏi đặc điểm Level 1 (LLM)
+ *   Với mỗi triệu chứng found_in_kb:
+ *     - Lấy tất cả đặc điểm (feature) từ KB (qua tất cả hội chứng)
+ *     - LLM sinh câu hỏi tự nhiên để bác sĩ xác nhận đặc điểm
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
+import { symptomsMatch } from '@/lib/reasoning';
 import { extractSymptoms, generateFeatureQuestions } from '@/lib/openai';
 import { ExtractRequest, ExtractResponse } from '@/types';
 
@@ -14,17 +23,25 @@ export async function POST(req: NextRequest) {
     const { clinical_text } = body;
 
     if (!clinical_text?.trim()) {
-      return NextResponse.json(
-        { error: 'Vui lòng nhập mô tả lâm sàng' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Vui lòng nhập mô tả lâm sàng' }, { status: 400 });
     }
 
-    // Lấy danh sách triệu chứng chuẩn từ KB để cung cấp cho LLM
+    // Lấy toàn bộ KB
     const allRows = await getAllKnowledge();
+
+    // Danh sách canonical symptom names từ KB (duy nhất)
     const knownSymptoms = [...new Set(allRows.map(r => r.symptom))];
 
-    // Bước 1: Trích xuất và chuẩn hóa triệu chứng
+    // Build synonym map: canonical name → synonym string
+    const synonymMap = new Map<string, string | null>();
+    for (const row of allRows) {
+      if (!synonymMap.has(row.symptom)) {
+        synonymMap.set(row.symptom, row.synonym);
+      }
+    }
+
+    // ── BƯỚC 1: LLM trích xuất và chuẩn hóa triệu chứng ─────────────────────
+    // LLM nhận danh sách knownSymptoms để chuẩn hóa về tên KB
     const extractedRaw = await extractSymptoms(clinical_text, knownSymptoms);
 
     if (extractedRaw.length === 0) {
@@ -34,38 +51,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Kiểm tra found_in_kb phía server (không dựa vào LLM) để tránh sai sót
-    const knownSet = new Set(knownSymptoms.map(s => s.toLowerCase().trim()));
-    const extracted = extractedRaw.map(s => ({
-      ...s,
-      found_in_kb: knownSet.has(s.normalized.toLowerCase().trim()),
-    }));
+    // ── Server-side canonicalization ──────────────────────────────────────────
+    // LLM đôi khi trả về synonym thay vì canonical name
+    // VD: "Đổ mồ hôi trộm" thay vì "Triều nhiệt đạo hãn"
+    // Dùng symptomsMatch (kể cả synonym) để:
+    //   1. Tìm canonical KB name khớp với tên LLM trả về
+    //   2. Ghi đè normalized = canonical name để reasoning dùng đúng key
+    //   3. found_in_kb chính xác hơn (không chỉ exact match)
+    const extracted = extractedRaw.map(s => {
+      const canonicalMatch = knownSymptoms.find(ks =>
+        symptomsMatch(s.normalized, ks, synonymMap.get(ks) ?? null)
+      );
+      return {
+        ...s,
+        normalized: canonicalMatch ?? s.normalized,
+        found_in_kb: !!canonicalMatch,
+      };
+    });
 
-    // Bước 2: Với mỗi triệu chứng tìm thấy trong KB, tạo câu hỏi về đặc điểm
+    // ── BƯỚC 2: Tạo câu hỏi đặc điểm Level 1 ────────────────────────────────
+    // Chỉ hỏi với triệu chứng tìm thấy trong KB
     const featureQuestions = [];
 
     for (const symptom of extracted.filter(s => s.found_in_kb)) {
-      // Tìm các đặc điểm cần hỏi của triệu chứng này trong KB
+      // Lấy tất cả đặc điểm của triệu chứng này trong KB (qua tất cả hội chứng)
       const relevantRows = allRows.filter(
-        r =>
-          r.symptom.toLowerCase() === symptom.normalized.toLowerCase() &&
-          r.feature &&
-          r.feature.trim() !== ''
+        r => r.symptom === symptom.normalized && r.feature && r.feature.trim() !== ''
       );
 
-      if (relevantRows.length === 0) continue;
+      if (relevantRows.length === 0) continue; // triệu chứng không có đặc điểm
 
-      // Thu thập tất cả đặc điểm duy nhất cần hỏi
-      const allFeatures = relevantRows
-        .flatMap(r => r.feature!.split(/[;,]/).map(f => f.trim()))
-        .filter(f => f.length >= 2);
-      const uniqueFeatures = [...new Set(allFeatures)];
+      // Thu thập đặc điểm duy nhất
+      const allFeatures = [
+        ...new Set(
+          relevantRows
+            .flatMap(r => r.feature!.split(/[;,]/).map(f => f.trim()))
+            .filter(f => f.length >= 2)
+        ),
+      ];
 
-      if (uniqueFeatures.length > 0) {
-        const question = await generateFeatureQuestions(
-          symptom.normalized,
-          uniqueFeatures
-        );
+      if (allFeatures.length > 0) {
+        const question = await generateFeatureQuestions(symptom.normalized, allFeatures);
         featureQuestions.push(question);
       }
     }
@@ -79,9 +105,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(response);
   } catch (error) {
     console.error('[/api/extract] Error:', error);
-    return NextResponse.json(
-      { error: 'Lỗi hệ thống. Vui lòng thử lại.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Lỗi hệ thống. Vui lòng thử lại.' }, { status: 500 });
   }
 }
