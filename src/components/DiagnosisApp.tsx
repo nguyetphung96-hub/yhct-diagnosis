@@ -111,7 +111,8 @@ export default function DiagnosisApp() {
             <span className="text-white text-base font-bold">Y</span>
           </div>
           <div className="flex-1">
-            <h1 className="text-base font-bold text-gray-900 leading-tight">Hệ thống hỗ trợ chẩn đoán hội chứng Y học cổ truyền dựa trên cơ sở tri thức kết hợp trí tuệ nhân tạo có khả năng giải thích</h1>
+            <h1 className="text-base font-bold text-gray-900 leading-tight">Hệ thống hỗ trợ chẩn đoán hội chứng Y học cổ truyền</h1>
+            <p className="text-xs text-teal-600">Dựa trên cơ sở tri thức kết hợp trí tuệ nhân tạo có khả năng giải thích</p>
           </div>
           <div className="hidden sm:flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-1.5 rounded-full">
             <span>⚠️</span>
