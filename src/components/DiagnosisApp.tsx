@@ -64,7 +64,7 @@ export default function DiagnosisApp() {
       // để finalize nhận đúng dữ liệu, không bị chênh lệch điểm
       const savedAnswers = data.processed_feature_answers ?? answersWithRaw;
       if (data.result.is_final || data.disambiguation_questions.length === 0) {
-        setState(s => ({ ...s, step: 4, feature_answers: savedAnswers, final_result: data.result, loading: false }));
+        setState(s => ({ ...s, step: 4, feature_answers: savedAnswers, final_result: data.result, explanation_narrative: data.explanation_narrative || '', loading: false }));
       } else {
         setState(s => ({ ...s, step: 3, feature_answers: savedAnswers, temp_syndromes: data.result.optimal_syndromes, disambiguation_questions: data.disambiguation_questions, loading: false }));
         setDisambigAnswers({});

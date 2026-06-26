@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllKnowledge } from '@/lib/supabase';
 import { runReasoning, parseRawAnswerToFeatures } from '@/lib/reasoning';
+import { generateExplanationNarrative } from '@/lib/openai';
 import { ReasonRequest, ReasonResponse, DisambiguationQuestion } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -68,12 +69,16 @@ export async function POST(req: NextRequest) {
         }))
       : [];
 
+    // ── Bước 8: Sinh narrative nếu is_final (không cần hỏi thêm) ─────────────
+    // Nếu cần disambiguation → narrative để trống, finalize sẽ sinh sau
+    const explanation_narrative = result.is_final
+      ? await generateExplanationNarrative(result.optimal_syndromes, processedAnswers)
+      : '';
+
     const response: ReasonResponse = {
       result,
       disambiguation_questions: disambiguationQuestions,
-      explanation_narrative: '',
-      // Trả về feature_answers đã parse để client lưu lại vào state
-      // → finalize sẽ nhận observed_features đã có, không cần parse lại
+      explanation_narrative,
       processed_feature_answers: processedAnswers,
     };
 
