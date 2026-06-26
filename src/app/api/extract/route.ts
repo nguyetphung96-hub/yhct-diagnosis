@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
     }
 
     // ── BƯỚC 1: LLM trích xuất và chuẩn hóa triệu chứng ─────────────────────
-    // LLM nhận danh sách knownSymptoms để chuẩn hóa về tên KB
-    const extractedRaw = await extractSymptoms(clinical_text, knownSymptoms);
+    // Truyền synonymMap để LLM chỉ map khi triệu chứng khớp tên chuẩn hoặc synonym trong KB
+    const extractedRaw = await extractSymptoms(clinical_text, knownSymptoms, synonymMap);
 
     if (extractedRaw.length === 0) {
       return NextResponse.json(

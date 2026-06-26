@@ -10,10 +10,16 @@ const MODEL = 'gpt-4o-mini'; // Nhanh hơn và ổn định hơn gpt-4o
 
 export async function extractSymptoms(
   clinicalText: string,
-  knownSymptoms: string[]
+  knownSymptoms: string[],
+  synonymMap?: Map<string, string | null>
 ): Promise<ExtractedSymptom[]> {
-  // Gửi toàn bộ danh sách (không cắt) để LLM chuẩn hóa chính xác nhất
-  const knownList = knownSymptoms.join(', ');
+  // Gửi canonical name + synonym để LLM chỉ map khi thực sự khớp KB
+  const knownList = knownSymptoms
+    .map(s => {
+      const syn = synonymMap?.get(s);
+      return syn ? `${s} (đồng nghĩa: ${syn})` : s;
+    })
+    .join('\n');
 
   const response = await openai.chat.completions.create({
     model: MODEL,
@@ -23,17 +29,20 @@ export async function extractSymptoms(
     messages: [
       {
         role: 'system',
-        content: `Bạn là chuyên gia Y học cổ truyền (YHCT). Nhiệm vụ: trích xuất triệu chứng từ mô tả lâm sàng và chuẩn hóa sang thuật ngữ YHCT chuẩn.
+        content: `Bạn là chuyên gia Y học cổ truyền (YHCT). Nhiệm vụ: trích xuất triệu chứng từ mô tả lâm sàng.
 
-Danh sách thuật ngữ chuẩn trong hệ thống:
+Danh sách triệu chứng chuẩn trong cơ sở dữ liệu (tên chuẩn và tên đồng nghĩa được liệt kê):
 ${knownList}
 
-Quy tắc:
+Quy tắc QUAN TRỌNG:
 1. Chỉ trích xuất các triệu chứng, dấu hiệu lâm sàng thực sự có trong văn bản
-2. Nếu triệu chứng khớp hoặc đồng nghĩa với tên trong danh sách, dùng chính xác tên đó làm "normalized"
-3. Nếu không có trong danh sách, dùng tên chuẩn YHCT tiếng Việt
+2. Trường "normalized": CHỈ dùng tên chuẩn trong danh sách nếu triệu chứng trong văn bản KHỚP CHÍNH XÁC hoặc KHỚP VỚI TÊN ĐỒNG NGHĨA đã liệt kê. Không được dùng kiến thức bên ngoài để suy diễn đồng nghĩa.
+3. Nếu triệu chứng KHÔNG khớp với bất kỳ tên chuẩn hoặc tên đồng nghĩa nào, giữ nguyên cách diễn đạt trong văn bản làm "normalized"
 4. KHÔNG bịa thêm triệu chứng không có trong văn bản
 5. Trường "found_in_kb" luôn để true (server sẽ kiểm tra lại)
+
+Ví dụ đúng: "đổ mồ hôi trộm" → normalized: "đạo hãn" (vì "đổ mồ hôi trộm" là đồng nghĩa của "đạo hãn")
+Ví dụ SAI: "hay tức giận" → normalized: "Ngũ tâm phiền nhiệt" (KHÔNG được, vì "hay tức giận" không có trong danh sách đồng nghĩa của "Ngũ tâm phiền nhiệt")
 
 Trả về JSON: { "symptoms": [{ "original": "...", "normalized": "...", "found_in_kb": true }] }`,
       },
