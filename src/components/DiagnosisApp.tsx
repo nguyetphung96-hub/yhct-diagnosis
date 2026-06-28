@@ -376,7 +376,6 @@ export default function DiagnosisApp() {
                 <div className="flex-shrink-0 flex items-center gap-2 p-5 pb-3">
                   <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm">🏥</div>
                   <h2 className="text-sm font-bold text-gray-800">Kết quả chẩn đoán</h2>
-                  {state.final_result && <ConfidenceBadge confidence={state.final_result.confidence} />}
                 </div>
 
                 {!state.final_result ? (

@@ -32,6 +32,4 @@ INSERT INTO knowledge_base (symptom, synonym, feature, mechanism, syndrome) VALU
   ('mất ngủ', 'thất miên', 'mất ngủ nhiều mộng', 'Hư hỏa quấy nhiễu lên trên làm tâm thần bất an, dẫn đến mất ngủ nhiều mộng', 'Can Thận âm hư'),
   ('di tinh', 'tinh dịch rò rỉ tự nhiên ra ngoài', NULL, 'Hư hỏa quấy động tinh thất, tinh quan đóng mở thất thường, dẫn đến chứng di tinh, xuất tinh sớm', 'Can Thận âm hư'),
   ('xuất tinh sớm', NULL, NULL, 'Hư hỏa quấy động tinh thất, tinh quan đóng mở thất thường, dẫn đến chứng di tinh, xuất tinh sớm', 'Can Thận âm hư'),
-  ('kinh nguyệt ít', NULL, NULL, 'Âm dịch bất túc, xung nhâm thất đi sự đầy đặn và điều hòa, dẫn đến nữ giới kinh nguyệt ít.', 'Can Thận âm hư'),
-  ('Lưỡi đỏ', NULL, 'lưỡi đỏ; ít rêu hoặc không rêu', 'biểu hiện đặc trưng của âm dịch khuy tổn, hư nhiệt nội sinh.', 'Can Thận âm hư'),
-  ('mạch tế sác', NULL, 'mạch nhỏ; nhanh', 'biểu hiện đặc trưng của âm dịch khuy tổn, hư nhiệt nội sinh.', 'Can Thận âm hư');
+  ('kinh nguyệt ít', NULL, NULL, 'Âm dịch bất túc, xung nhâm thất đi sự đầy đặn và điều hòa, dẫn đến nữ giới kinh nguyệt ít.', 'Can Thận âm hư');
