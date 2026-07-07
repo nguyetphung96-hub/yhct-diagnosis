@@ -27,7 +27,6 @@ export default function DiagnosisApp() {
   const setLoading = (loading: boolean) => setState(s => ({ ...s, loading, error: null }));
   const setError = (error: string) => setState(s => ({ ...s, loading: false, error }));
 
-  // Step 1 → 2
   const handleExtract = async () => {
     if (!state.clinical_text.trim()) { setError('Vui lòng nhập mô tả lâm sàng'); return; }
     setLoading(true);
@@ -46,7 +45,6 @@ export default function DiagnosisApp() {
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Lỗi không xác định'); }
   };
 
-  // Step 2 → 3 or 4
   const handleReason = async () => {
     setLoading(true);
     const answersWithRaw: SymptomFeatures[] = state.feature_questions.map(q => ({
@@ -60,8 +58,6 @@ export default function DiagnosisApp() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Lỗi suy luận');
-      // Lưu processed_feature_answers (observed_features đã parse từ server)
-      // để finalize nhận đúng dữ liệu, không bị chênh lệch điểm
       const savedAnswers = data.processed_feature_answers ?? answersWithRaw;
       if (data.result.is_final || data.disambiguation_questions.length === 0) {
         setState(s => ({ ...s, step: 4, feature_answers: savedAnswers, final_result: data.result, explanation_narrative: data.explanation_narrative || '', loading: false }));
@@ -73,7 +69,6 @@ export default function DiagnosisApp() {
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Lỗi không xác định'); }
   };
 
-  // Step 3 → 4
   const handleFinalize = async () => {
     setLoading(true);
     const confirmedDisambiguation = state.disambiguation_questions
@@ -103,120 +98,96 @@ export default function DiagnosisApp() {
   const tab2Available = state.step >= 3 || state.step === 4;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-gradient-to-br from-teal-50 via-white to-emerald-50">
-      {/* Header */}
-      <header className="flex-shrink-0 bg-white border-b border-teal-100 shadow-sm">
-        <div className="max-w-screen-xl mx-auto px-6 py-3 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-teal-600 flex items-center justify-center shadow">
-            <span className="text-white text-base font-bold">Y</span>
+    <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
+
+      {/* ── HEADER ── */}
+      <header className="flex-shrink-0 bg-teal-700 shadow-md">
+        <div className="max-w-screen-xl mx-auto px-6 py-3 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
+            <span className="text-teal-700 text-base font-black">Y</span>
           </div>
           <div className="flex-1">
-            <h1 className="text-base font-bold text-gray-900 leading-tight">Hệ thống hỗ trợ chẩn đoán hội chứng Y học cổ truyền</h1>
-            <p className="text-xs text-teal-600">Dựa trên cơ sở tri thức kết hợp trí tuệ nhân tạo có khả năng giải thích</p>
+            <h1 className="text-sm font-bold text-white leading-tight">Hệ thống hỗ trợ chẩn đoán hội chứng Y học cổ truyền</h1>
+            <p className="text-xs text-teal-200 mt-0.5">Dựa trên cơ sở tri thức kết hợp trí tuệ nhân tạo có khả năng giải thích</p>
           </div>
-          <div className="hidden sm:flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-1.5 rounded-full">
-            <span>⚠️</span>
-            <span className="font-medium">Hệ thống chỉ hỗ trợ bác sĩ, không thay thế chẩn đoán lâm sàng</span>
+          <div className="hidden sm:flex items-center gap-1.5 bg-amber-400 text-amber-900 text-xs px-3 py-1.5 rounded-full font-medium shadow-sm">
+            <span>⚠</span>
+            <span>Hệ thống chỉ hỗ trợ bác sĩ, không thay thế chẩn đoán lâm sàng</span>
           </div>
           {state.step > 1 && (
-            <button onClick={handleReset} className="text-sm text-gray-500 hover:text-teal-600 border border-gray-200 hover:border-teal-300 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+            <button onClick={handleReset} className="text-xs text-teal-100 hover:text-white border border-teal-500 hover:border-teal-200 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
               ↩ Bắt đầu lại
             </button>
           )}
         </div>
-        <div className="sm:hidden bg-amber-50 border-t border-amber-100 px-4 py-1.5 text-xs text-amber-700 text-center">
-          ⚠️ Hệ thống chỉ hỗ trợ bác sĩ, không thay thế chẩn đoán lâm sàng
-        </div>
-        {/* Tabs */}
-        <div className="max-w-screen-xl mx-auto px-6 flex border-t border-gray-100">
-          <button onClick={() => setActiveTab(1)}
-            className={`px-6 py-2.5 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${activeTab === 1 ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-            <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${activeTab === 1 ? 'bg-teal-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
-              {state.step > 2 ? '✓' : '1'}
-            </span>
-            Tiếp nhận & Khai thác thông tin
-          </button>
-          <button onClick={() => tab2Available && setActiveTab(2)} disabled={!tab2Available}
-            className={`px-6 py-2.5 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${activeTab === 2 ? 'border-teal-600 text-teal-700' : tab2Available ? 'border-transparent text-gray-400 hover:text-gray-600' : 'border-transparent text-gray-300 cursor-not-allowed'}`}>
-            <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${activeTab === 2 ? 'bg-teal-600 text-white' : tab2Available ? 'bg-gray-200 text-gray-600' : 'bg-gray-100 text-gray-300'}`}>
-              {state.step === 4 ? '✓' : '2'}
-            </span>
-            Phân biệt hội chứng & Kết quả
-            {!tab2Available && <span className="text-xs text-gray-300 ml-1">(chờ xử lý)</span>}
-          </button>
+
+        {/* Tab bar */}
+        <div className="max-w-screen-xl mx-auto px-6 flex gap-1 pt-1">
+          <TabBtn active={activeTab === 1} done={state.step > 2} num={1} label="Tiếp nhận & Khai thác thông tin" onClick={() => setActiveTab(1)} />
+          <TabBtn active={activeTab === 2} done={state.step === 4} num={2} label="Phân biệt hội chứng & Kết quả" disabled={!tab2Available} onClick={() => tab2Available && setActiveTab(2)} />
         </div>
       </header>
 
       {/* Error */}
       {state.error && (
         <div className="flex-shrink-0 max-w-screen-xl mx-auto px-6 pt-3 w-full">
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
+          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-r-xl text-sm flex items-start gap-2">
             <span>⚠️</span><span>{state.error}</span>
           </div>
         </div>
       )}
 
-      {/* ======= TAB 1 ======= */}
+      {/* ══════════════════════════════ TAB 1 ══════════════════════════════ */}
       {activeTab === 1 && (
-        <div className="flex-1 overflow-hidden max-w-screen-xl mx-auto px-6 py-5 w-full">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full">
+        <div className="flex-1 overflow-hidden max-w-screen-xl mx-auto px-6 py-4 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
 
-            {/* Frame: Nhập thông tin lâm sàng */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-              <div className="flex-shrink-0 flex items-center gap-2 p-5 pb-3">
-                <div className="w-7 h-7 rounded-lg bg-teal-100 flex items-center justify-center text-sm">📋</div>
-                <h2 className="text-sm font-bold text-gray-800">Nhập thông tin lâm sàng</h2>
-                {state.step > 1 && <span className="ml-auto text-xs bg-teal-50 text-teal-600 border border-teal-200 px-2 py-0.5 rounded-full">✓ Đã gửi</span>}
+            {/* Frame A: Nhập thông tin lâm sàng */}
+            <Panel
+              color="teal"
+              icon="📋"
+              title="Nhập thông tin lâm sàng"
+              badge={state.step > 1 ? { label: '✓ Đã gửi', color: 'green' } : undefined}
+            >
+              <p className="text-xs text-gray-500 mb-2">Nhập mô tả triệu chứng, dấu hiệu của bệnh nhân theo ngôn ngữ tự nhiên.</p>
+              <textarea
+                value={state.clinical_text}
+                onChange={e => state.step === 1 && setState(s => ({ ...s, clinical_text: e.target.value }))}
+                readOnly={state.step > 1}
+                placeholder="Ví dụ: Bệnh nhân nữ 45 tuổi, mất ngủ kéo dài 3 tháng, hay quên, hồi hộp, sắc mặt nhợt nhạt, chóng mặt nhẹ, môi nhợt, mệt mỏi..."
+                rows={8}
+                className={`w-full rounded-lg border p-3 text-sm outline-none resize-none transition ${state.step > 1 ? 'bg-gray-50 border-gray-200 text-gray-600 italic' : 'border-gray-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 text-gray-800 placeholder-gray-400'}`}
+              />
+              <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 text-xs text-teal-700 mt-2">
+                <p className="font-semibold mb-1">💡 Hướng dẫn nhập liệu</p>
+                <p>• Mô tả càng chi tiết càng tốt (tính chất, thời gian, yếu tố tăng/giảm)</p>
+                <p>• Bao gồm kết quả quan sát: sắc mặt, lưỡi, mạch nếu có</p>
               </div>
-              <div className="flex-1 overflow-y-auto px-5 pb-5 flex flex-col gap-3">
-                <p className="text-xs text-gray-500">Nhập mô tả triệu chứng, dấu hiệu của bệnh nhân theo ngôn ngữ tự nhiên.</p>
-                <textarea
-                  value={state.clinical_text}
-                  onChange={e => state.step === 1 && setState(s => ({ ...s, clinical_text: e.target.value }))}
-                  readOnly={state.step > 1}
-                  placeholder="Ví dụ: Bệnh nhân nữ 45 tuổi, mất ngủ kéo dài 3 tháng, hay quên, hồi hộp, sắc mặt nhợt nhạt, chóng mặt nhẹ, môi nhợt, mệt mỏi..."
-                  rows={8}
-                  className={`w-full rounded-xl border p-3 text-sm outline-none resize-none transition ${state.step > 1 ? 'bg-gray-50 border-gray-100 text-gray-600 italic' : 'border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 text-gray-800 placeholder-gray-400'}`}
-                />
-                <div className="bg-teal-50 border border-teal-100 rounded-xl p-3 text-xs text-teal-700 space-y-0.5">
-                  <p className="font-semibold">💡 Hướng dẫn</p>
-                  <p>• Mô tả càng chi tiết càng tốt (tính chất, thời gian, yếu tố tăng/giảm)</p>
-                  <p>• Bao gồm kết quả quan sát: sắc mặt, lưỡi, mạch nếu có</p>
-                </div>
-                {state.step === 1 && (
-                  <button onClick={handleExtract} disabled={state.loading || !state.clinical_text.trim()}
-                    className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white py-2.5 rounded-xl font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:cursor-not-allowed">
-                    {state.loading ? <><Spinner /> Đang phân tích...</> : <>✓ Xác nhận & Phân tích triệu chứng</>}
-                  </button>
-                )}
-              </div>
-            </div>
+              {state.step === 1 && (
+                <button onClick={handleExtract} disabled={state.loading || !state.clinical_text.trim()}
+                  className="mt-3 w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:cursor-not-allowed">
+                  {state.loading ? <><Spinner /> Đang phân tích...</> : <>✓ Xác nhận & Phân tích triệu chứng</>}
+                </button>
+              )}
+            </Panel>
 
-            {/* Frame: Triệu chứng & Câu hỏi mức 1 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-              <div className="flex-shrink-0 flex items-center gap-2 p-5 pb-3">
-                <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-sm">❓</div>
-                <h2 className="text-sm font-bold text-gray-800">Triệu chứng & Câu hỏi bổ sung mức 1</h2>
-                {state.step > 2 && <span className="ml-auto text-xs bg-teal-50 text-teal-600 border border-teal-200 px-2 py-0.5 rounded-full">✓ Đã gửi</span>}
-              </div>
-
+            {/* Frame B: Triệu chứng & Câu hỏi mức 1 */}
+            <Panel
+              color="blue"
+              icon="🔍"
+              title="Triệu chứng & Câu hỏi bổ sung mức 1"
+              badge={state.step > 2 ? { label: '✓ Đã gửi', color: 'green' } : undefined}
+            >
               {state.step < 2 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm gap-2 border-2 border-dashed border-gray-200 rounded-xl mx-5 mb-5 py-12">
-                  <span className="text-3xl">⏳</span>
-                  <p>Chờ nhập và xác nhận thông tin lâm sàng</p>
-                  <p className="text-xs text-gray-300">Kết quả trích xuất sẽ hiển thị tại đây</p>
-                </div>
+                <EmptyState icon="⏳" text="Chờ nhập và xác nhận thông tin lâm sàng" sub="Kết quả trích xuất sẽ hiển thị tại đây" />
               ) : (
-                <div className="flex-1 overflow-y-auto px-5 pb-5 flex flex-col gap-3">
-                  {/* Triệu chứng */}
-                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                    <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                      <span className="text-green-600">●</span> Triệu chứng đã trích xuất & chuẩn hóa
-                      <span className="ml-auto bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{state.extracted_symptoms.filter(s => s.found_in_kb).length} khớp KB</span>
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-col gap-3 h-full">
+                  {/* Triệu chứng đã trích xuất */}
+                  <div>
+                    <SectionLabel color="teal" text="Triệu chứng đã trích xuất & chuẩn hóa" right={`${state.extracted_symptoms.filter(s => s.found_in_kb).length} khớp KB`} />
+                    <div className="flex flex-wrap gap-1.5 mt-2">
                       {state.extracted_symptoms.filter(s => s.found_in_kb).map(s => (
-                        <span key={s.normalized} className="bg-teal-50 text-teal-800 border border-teal-200 px-2.5 py-0.5 rounded-full text-xs font-medium">
+                        <span key={s.normalized} className="bg-teal-50 text-teal-800 border border-teal-300 px-2.5 py-0.5 rounded-full text-xs font-medium">
                           {s.normalized}{s.original !== s.normalized && <span className="text-teal-400 ml-1">({s.original})</span>}
                         </span>
                       ))}
@@ -230,89 +201,82 @@ export default function DiagnosisApp() {
 
                   {/* Câu hỏi mức 1 */}
                   {state.feature_questions.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-gray-600 flex items-center gap-1">
-                        <span className="text-blue-500">●</span> Câu hỏi khai thác đặc điểm triệu chứng
-                      </p>
-                      {state.feature_questions.map(q => (
-                        <div key={q.symptom} className="border border-gray-100 rounded-xl p-3 bg-gray-50">
-                          <div className="flex items-start gap-2 mb-1.5">
-                            <span className="bg-teal-600 text-white text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap">{q.symptom}</span>
-                            <p className="text-xs text-gray-700 font-medium">{q.question}</p>
+                    <div className="flex-1 overflow-y-auto">
+                      <SectionLabel color="blue" text="Câu hỏi khai thác đặc điểm triệu chứng" />
+                      <div className="space-y-2 mt-2">
+                        {state.feature_questions.map(q => (
+                          <div key={q.symptom} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                            <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex items-center gap-2">
+                              <span className="bg-teal-600 text-white text-xs px-2 py-0.5 rounded font-semibold">{q.symptom}</span>
+                              <p className="text-xs text-gray-700">{q.question}</p>
+                            </div>
+                            <div className="p-2.5">
+                              {state.step === 2 ? (
+                                <>
+                                  <input type="text" value={featureInputs[q.symptom] || ''}
+                                    onChange={e => setFeatureInputs(prev => ({ ...prev, [q.symptom]: e.target.value }))}
+                                    placeholder="Nhập mô tả (để trống nếu không rõ)..."
+                                    className="w-full rounded-md border border-gray-200 focus:border-teal-400 focus:ring-1 focus:ring-teal-100 px-2.5 py-1.5 text-xs outline-none transition"
+                                  />
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {q.features_to_ask.map(f => (
+                                      <button key={f} onClick={() => {
+                                        const cur = featureInputs[q.symptom] || '';
+                                        setFeatureInputs(prev => ({ ...prev, [q.symptom]: cur ? `${cur}; ${f}` : f }));
+                                      }} className="text-xs bg-teal-50 border border-teal-200 hover:bg-teal-100 text-teal-700 px-2 py-0.5 rounded transition">
+                                        + {f}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="text-xs text-gray-600 italic">
+                                  {featureInputs[q.symptom] || <span className="text-gray-400">Không có thông tin</span>}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          {state.step === 2 ? (
-                            <>
-                              <input type="text" value={featureInputs[q.symptom] || ''}
-                                onChange={e => setFeatureInputs(prev => ({ ...prev, [q.symptom]: e.target.value }))}
-                                placeholder="Nhập mô tả (để trống nếu không rõ)..."
-                                className="w-full rounded-lg border border-gray-200 focus:border-teal-400 px-2.5 py-1.5 text-xs outline-none transition"
-                              />
-                              <div className="flex flex-wrap gap-1 mt-1.5">
-                                {q.features_to_ask.map(f => (
-                                  <button key={f} onClick={() => {
-                                    const cur = featureInputs[q.symptom] || '';
-                                    setFeatureInputs(prev => ({ ...prev, [q.symptom]: cur ? `${cur}; ${f}` : f }));
-                                  }} className="text-xs bg-white border border-gray-200 hover:border-teal-300 hover:text-teal-700 text-gray-500 px-2 py-0.5 rounded-full transition">
-                                    + {f}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-xs text-gray-600 italic bg-white rounded-lg px-2.5 py-1.5 border border-gray-100">
-                              {featureInputs[q.symptom] || <span className="text-gray-400">Không có thông tin</span>}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   )}
 
                   {state.step === 2 && (
                     <button onClick={handleReason} disabled={state.loading}
-                      className="mt-auto w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white py-2.5 rounded-xl font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:cursor-not-allowed">
+                      className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:cursor-not-allowed">
                       {state.loading ? <><Spinner /> Đang suy luận...</> : <>✓ Xác nhận & Suy luận hội chứng</>}
                     </button>
                   )}
                 </div>
               )}
-            </div>
+            </Panel>
           </div>
         </div>
       )}
 
-      {/* ======= TAB 2 ======= */}
+      {/* ══════════════════════════════ TAB 2 ══════════════════════════════ */}
       {activeTab === 2 && tab2Available && (
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-screen-xl mx-auto px-6 py-5 w-full space-y-5">
-            {/* Row 1: 2 cột — mỗi cột cuộn độc lập */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5" style={{ height: 'calc(100vh - 200px)' }}>
+          <div className="max-w-screen-xl mx-auto px-6 py-4 w-full space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ minHeight: 'calc(100vh - 220px)' }}>
 
-              {/* Frame: Phân biệt hội chứng & Câu hỏi mức 2 */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-                <div className="flex-shrink-0 flex items-center gap-2 p-5 pb-3">
-                  <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center text-sm">⚖</div>
-                  <h2 className="text-sm font-bold text-gray-800">Phân biệt hội chứng & Câu hỏi mức 2</h2>
-                  {state.step === 4 && state.disambiguation_questions.length > 0 && (
-                    <span className="ml-auto text-xs bg-teal-50 text-teal-600 border border-teal-200 px-2 py-0.5 rounded-full">✓ Đã gửi</span>
-                  )}
-                </div>
-
+              {/* Frame C: Phân biệt hội chứng */}
+              <Panel
+                color="purple"
+                icon="⚖"
+                title="Phân biệt hội chứng & Câu hỏi mức 2"
+                badge={state.step === 4 && state.disambiguation_questions.length > 0 ? { label: '✓ Đã gửi', color: 'green' } : undefined}
+              >
                 {state.step === 4 && state.disambiguation_questions.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm gap-2 border-2 border-dashed border-gray-200 rounded-xl mx-5 mb-5 py-8">
-                    <span className="text-2xl">✅</span>
-                    <p className="text-center">Không cần phân biệt thêm</p>
-                    <p className="text-xs text-gray-300 text-center">Hệ thống đã xác định hội chứng đủ tin cậy</p>
-                  </div>
+                  <EmptyState icon="✅" text="Không cần phân biệt thêm" sub="Hệ thống đã xác định hội chứng đủ tin cậy" />
                 ) : state.step >= 3 ? (
-                  <div className="flex-1 overflow-y-auto px-5 pb-5 flex flex-col gap-3">
-                    {/* Hội chứng cạnh tranh */}
+                  <div className="flex flex-col gap-3 h-full">
                     {state.temp_syndromes.length > 0 && (
-                      <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                        <p className="text-xs font-semibold text-amber-700 mb-2">Hội chứng đang cạnh tranh (điểm tạm thời)</p>
-                        <div className="space-y-1.5">
+                      <div>
+                        <SectionLabel color="amber" text="Hội chứng đang cạnh tranh (điểm tạm thời)" />
+                        <div className="space-y-1.5 mt-2">
                           {state.temp_syndromes.map((s, i) => (
-                            <div key={s.syndrome} className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs ${i === 0 ? 'bg-teal-100 text-teal-800 font-semibold' : 'bg-white text-gray-700 border border-gray-100'}`}>
+                            <div key={s.syndrome} className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs border ${i === 0 ? 'bg-teal-50 border-teal-200 text-teal-800 font-semibold' : 'bg-white border-gray-200 text-gray-700'}`}>
                               <span>{s.syndrome} <span className="text-gray-400 font-normal ml-1">{s.matched_count}/{s.total_syndrome_symptoms} TC</span></span>
                               <ScoreBadge score={s.score} />
                             </div>
@@ -321,100 +285,88 @@ export default function DiagnosisApp() {
                       </div>
                     )}
 
-                    {/* Câu hỏi mức 2 — có/không */}
                     {state.disambiguation_questions.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-gray-600 flex items-center gap-1">
-                          <span className="text-purple-500">●</span> Câu hỏi phân biệt hội chứng
-                        </p>
-                        {state.disambiguation_questions.map(q => (
-                          <div key={q.symptom} className="border border-gray-100 rounded-xl p-3 bg-gray-50">
-                            <p className="text-xs font-medium text-gray-700 mb-1.5">{q.question}</p>
-                            {q.related_syndromes.length > 0 && (
-                              <p className="text-xs text-gray-400 mb-2">Liên quan: {q.related_syndromes.join(', ')}</p>
-                            )}
-                            {state.step === 3 ? (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => setDisambigAnswers(prev => ({ ...prev, [q.symptom]: 'có' }))}
-                                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${disambigAnswers[q.symptom] === 'có' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300 hover:text-teal-700'}`}>
-                                  ✓ Có
-                                </button>
-                                <button
-                                  onClick={() => setDisambigAnswers(prev => ({ ...prev, [q.symptom]: 'không' }))}
-                                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${disambigAnswers[q.symptom] === 'không' ? 'bg-gray-500 text-white border-gray-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:text-gray-700'}`}>
-                                  ✗ Không
-                                </button>
+                      <div className="flex-1 overflow-y-auto">
+                        <SectionLabel color="purple" text="Câu hỏi phân biệt hội chứng" />
+                        <div className="space-y-2 mt-2">
+                          {state.disambiguation_questions.map(q => (
+                            <div key={q.symptom} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                              <div className="bg-purple-50 border-b border-purple-100 px-3 py-2">
+                                <p className="text-xs font-medium text-gray-800">{q.question}</p>
+                                {q.related_syndromes.length > 0 && (
+                                  <p className="text-xs text-gray-400 mt-0.5">Liên quan: {q.related_syndromes.join(', ')}</p>
+                                )}
                               </div>
-                            ) : (
-                              <p className={`text-xs font-medium px-2.5 py-1.5 rounded-lg border ${disambigAnswers[q.symptom] === 'có' ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                                {disambigAnswers[q.symptom] === 'có' ? '✓ Có' : '✗ Không'}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                              <div className="p-2">
+                                {state.step === 3 ? (
+                                  <div className="flex gap-2">
+                                    <button onClick={() => setDisambigAnswers(prev => ({ ...prev, [q.symptom]: 'có' }))}
+                                      className={`flex-1 py-1.5 rounded-md text-xs font-semibold border transition-all ${disambigAnswers[q.symptom] === 'có' ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300 hover:text-teal-700'}`}>
+                                      ✓ Có
+                                    </button>
+                                    <button onClick={() => setDisambigAnswers(prev => ({ ...prev, [q.symptom]: 'không' }))}
+                                      className={`flex-1 py-1.5 rounded-md text-xs font-semibold border transition-all ${disambigAnswers[q.symptom] === 'không' ? 'bg-gray-500 text-white border-gray-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
+                                      ✗ Không
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <p className={`text-xs font-medium px-2.5 py-1.5 rounded-md ${disambigAnswers[q.symptom] === 'có' ? 'bg-teal-50 text-teal-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {disambigAnswers[q.symptom] === 'có' ? '✓ Có' : '✗ Không'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
                     {state.step === 3 && (
                       <button onClick={handleFinalize} disabled={state.loading}
-                        className="mt-auto w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white py-2.5 rounded-xl font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:cursor-not-allowed">
+                        className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:cursor-not-allowed">
                         {state.loading ? <><Spinner /> Đang hoàn tất...</> : <>✓ Xác nhận & Hoàn tất chẩn đoán</>}
                       </button>
                     )}
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm gap-2 border-2 border-dashed border-gray-200 rounded-xl mx-5 mb-5 py-8">
-                    <span className="text-2xl">⏳</span>
-                    <p>Chờ kết quả suy luận từ Tab 1</p>
-                  </div>
+                  <EmptyState icon="⏳" text="Chờ kết quả suy luận từ Tab 1" />
                 )}
-              </div>
+              </Panel>
 
-              {/* Frame: Kết quả chẩn đoán */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-                <div className="flex-shrink-0 flex items-center gap-2 p-5 pb-3">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm">🏥</div>
-                  <h2 className="text-sm font-bold text-gray-800">Kết quả chẩn đoán</h2>
-                </div>
-
+              {/* Frame D: Kết quả chẩn đoán */}
+              <Panel color="emerald" icon="🏥" title="Kết quả chẩn đoán">
                 {!state.final_result ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm gap-2 border-2 border-dashed border-gray-200 rounded-xl mx-5 mb-5 py-8">
-                    <span className="text-2xl">⏳</span>
-                    <p className="text-center">Kết quả sẽ hiển thị sau khi hoàn tất suy luận</p>
-                  </div>
+                  <EmptyState icon="⏳" text="Kết quả sẽ hiển thị sau khi hoàn tất suy luận" />
+                ) : state.final_result.optimal_syndromes.length === 0 ? (
+                  <EmptyState icon="🔍" text="Chưa xác định được hội chứng" sub="Cần thu thập thêm thông tin lâm sàng" />
                 ) : (
-                  <div className="flex-1 overflow-y-auto px-5 pb-5 flex flex-col gap-3">
-                    {state.final_result.optimal_syndromes.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">
-                        <p className="text-3xl mb-2">🔍</p>
-                        <p className="font-medium text-sm">Chưa xác định được hội chứng</p>
-                        <p className="text-xs mt-1">Cần thu thập thêm thông tin lâm sàng</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
+                  <div className="flex flex-col gap-3 h-full overflow-y-auto">
+                    {/* Syndrome cards */}
+                    <div>
+                      <SectionLabel color="emerald" text="Hội chứng được xác định" />
+                      <div className="space-y-2 mt-2">
                         {state.final_result.optimal_syndromes.map((s, i) => (
                           <SyndromeCard key={s.syndrome} stat={s} isPrimary={i === 0} isSelected={state.doctor_selected_syndromes.includes(s.syndrome)} onToggle={() => toggleSelect(s.syndrome)} />
                         ))}
+                      </div>
+                    </div>
 
-                        {/* Lời giải thích tổng hợp từ LLM (Bước 8) */}
-                        {state.explanation_narrative && (
-                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                            <p className="text-xs font-semibold text-blue-700 mb-2 flex items-center gap-1.5">
-                              <span>✦</span> Lời giải thích tổng hợp
-                            </p>
-                            <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
-                              {state.explanation_narrative}
-                            </p>
-                          </div>
-                        )}
+                    {/* LLM narrative */}
+                    {state.explanation_narrative && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-blue-800 mb-1.5 flex items-center gap-1.5">
+                          <span>✦</span> Lời giải thích tổng hợp
+                        </p>
+                        <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
+                          {state.explanation_narrative}
+                        </p>
                       </div>
                     )}
 
-                    {/* Triệu chứng đã/chưa giải thích */}
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      <div className="bg-green-50 rounded-xl p-3">
-                        <p className="text-xs font-semibold text-green-700 mb-1.5 flex items-center gap-1"><span>✓</span> Đã giải thích</p>
+                    {/* Covered / Uncovered */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-green-700 mb-1.5">✓ Đã giải thích</p>
                         <div className="flex flex-wrap gap-1">
                           {state.final_result.covered_symptoms.map(s => (
                             <span key={s} className="text-xs bg-white text-green-700 border border-green-200 px-2 py-0.5 rounded-full">{s}</span>
@@ -422,8 +374,8 @@ export default function DiagnosisApp() {
                         </div>
                       </div>
                       {state.final_result.uncovered_symptoms.length > 0 && (
-                        <div className="bg-amber-50 rounded-xl p-3">
-                          <p className="text-xs font-semibold text-amber-700 mb-1.5 flex items-center gap-1"><span>○</span> Cần đánh giá thêm</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                          <p className="text-xs font-semibold text-amber-700 mb-1.5">○ Cần đánh giá thêm</p>
                           <div className="flex flex-wrap gap-1">
                             {state.final_result.uncovered_symptoms.map(s => (
                               <span key={s} className="text-xs bg-white text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">{s}</span>
@@ -434,34 +386,36 @@ export default function DiagnosisApp() {
                     </div>
                   </div>
                 )}
-              </div>
+              </Panel>
             </div>
 
-            {/* Row 2: Bác sĩ xác nhận (full width) */}
+            {/* Frame E: Xác nhận bác sĩ */}
             {state.final_result && state.final_result.optimal_syndromes.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm border border-teal-100 p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg bg-teal-100 flex items-center justify-center text-sm">👨‍⚕️</div>
-                  <h2 className="text-sm font-bold text-gray-800">Xác nhận chẩn đoán của bác sĩ</h2>
-                  <div className="ml-auto text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
-                    ⚠️ Quyết định cuối thuộc về bác sĩ lâm sàng
+              <div className="bg-white rounded-xl shadow-sm border-l-4 border-teal-500 border border-gray-200 overflow-hidden">
+                <div className="bg-teal-50 border-b border-teal-100 px-5 py-3 flex items-center gap-3">
+                  <span className="text-base">👨‍⚕️</span>
+                  <h2 className="text-sm font-bold text-teal-800">Xác nhận chẩn đoán của bác sĩ</h2>
+                  <div className="ml-auto text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full font-medium">
+                    ⚠ Quyết định cuối thuộc về bác sĩ lâm sàng
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mb-3">Chọn hội chứng phù hợp nhất theo đánh giá lâm sàng của bạn:</p>
-                <div className="flex flex-wrap gap-2">
-                  {state.final_result.optimal_syndromes.map(s => (
-                    <button key={s.syndrome} onClick={() => toggleSelect(s.syndrome)}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${state.doctor_selected_syndromes.includes(s.syndrome) ? 'bg-teal-600 text-white border-teal-600 shadow' : 'bg-white text-gray-700 border-gray-200 hover:border-teal-300 hover:text-teal-700'}`}>
-                      {s.syndrome} <span className="text-xs opacity-70 ml-1">{Math.round(s.score * 100)}%</span>
-                    </button>
-                  ))}
-                </div>
-                {state.doctor_selected_syndromes.length > 0 && (
-                  <div className="mt-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 flex items-center gap-2">
-                    <span className="text-teal-600">✅</span>
-                    <p className="text-sm font-semibold text-teal-800">Bác sĩ xác nhận: {state.doctor_selected_syndromes.join(' + ')}</p>
+                <div className="px-5 py-4">
+                  <p className="text-xs text-gray-500 mb-3">Chọn hội chứng phù hợp nhất theo đánh giá lâm sàng của bạn:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {state.final_result.optimal_syndromes.map(s => (
+                      <button key={s.syndrome} onClick={() => toggleSelect(s.syndrome)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${state.doctor_selected_syndromes.includes(s.syndrome) ? 'bg-teal-600 text-white border-teal-600 shadow' : 'bg-white text-gray-700 border-gray-300 hover:border-teal-400 hover:text-teal-700'}`}>
+                        {s.syndrome} <span className="text-xs opacity-70 ml-1">{Math.round(s.score * 100)}%</span>
+                      </button>
+                    ))}
                   </div>
-                )}
+                  {state.doctor_selected_syndromes.length > 0 && (
+                    <div className="mt-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3 flex items-center gap-2">
+                      <span className="text-teal-600">✅</span>
+                      <p className="text-sm font-semibold text-teal-800">Bác sĩ xác nhận: {state.doctor_selected_syndromes.join(' + ')}</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -471,34 +425,115 @@ export default function DiagnosisApp() {
   );
 }
 
-// ============================================================
-// Sub-components
-// ============================================================
+// ══════════════════════════════════════════════════════════════
+// Layout components
+// ══════════════════════════════════════════════════════════════
+
+const PANEL_COLORS = {
+  teal:   { border: 'border-l-teal-500',   header: 'bg-teal-600',   icon: 'bg-teal-100 text-teal-700' },
+  blue:   { border: 'border-l-blue-500',   header: 'bg-blue-600',   icon: 'bg-blue-100 text-blue-700' },
+  purple: { border: 'border-l-purple-500', header: 'bg-purple-600', icon: 'bg-purple-100 text-purple-700' },
+  emerald:{ border: 'border-l-emerald-500',header: 'bg-emerald-600',icon: 'bg-emerald-100 text-emerald-700' },
+};
+
+function Panel({ color, icon, title, badge, children }: {
+  color: keyof typeof PANEL_COLORS;
+  icon: string;
+  title: string;
+  badge?: { label: string; color: string };
+  children: React.ReactNode;
+}) {
+  const c = PANEL_COLORS[color];
+  return (
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 border-l-4 ${c.border} flex flex-col overflow-hidden`}>
+      {/* Panel header */}
+      <div className={`flex-shrink-0 ${c.header} px-4 py-2.5 flex items-center gap-2.5`}>
+        <span className="text-sm">{icon}</span>
+        <h2 className="text-sm font-bold text-white flex-1">{title}</h2>
+        {badge && (
+          <span className="text-xs bg-white bg-opacity-20 text-white border border-white border-opacity-30 px-2 py-0.5 rounded-full font-medium">
+            {badge.label}
+          </span>
+        )}
+      </div>
+      {/* Panel body */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const LABEL_COLORS = {
+  teal:   'bg-teal-100 text-teal-700 border-teal-200',
+  blue:   'bg-blue-100 text-blue-700 border-blue-200',
+  purple: 'bg-purple-100 text-purple-700 border-purple-200',
+  emerald:'bg-emerald-100 text-emerald-700 border-emerald-200',
+  amber:  'bg-amber-100 text-amber-700 border-amber-200',
+};
+
+function SectionLabel({ color, text, right }: { color: keyof typeof LABEL_COLORS; text: string; right?: string }) {
+  return (
+    <div className={`flex items-center justify-between px-2.5 py-1 rounded border text-xs font-semibold ${LABEL_COLORS[color]}`}>
+      <span>{text}</span>
+      {right && <span className="font-normal opacity-70">{right}</span>}
+    </div>
+  );
+}
+
+function EmptyState({ icon, text, sub }: { icon: string; text: string; sub?: string }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm gap-2 border-2 border-dashed border-gray-200 rounded-lg py-10">
+      <span className="text-3xl">{icon}</span>
+      <p className="text-center font-medium text-gray-500">{text}</p>
+      {sub && <p className="text-xs text-center">{sub}</p>}
+    </div>
+  );
+}
+
+function TabBtn({ active, done, num, label, disabled, onClick }: {
+  active: boolean; done: boolean; num: number; label: string; disabled?: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className={`px-5 py-2 text-xs font-semibold flex items-center gap-2 rounded-t-lg transition-all border-b-2
+        ${active ? 'bg-white text-teal-700 border-teal-400' : disabled ? 'text-teal-300 border-transparent cursor-not-allowed' : 'text-teal-200 border-transparent hover:bg-teal-600 hover:text-white'}`}>
+      <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${active ? 'bg-teal-600 text-white' : done ? 'bg-green-500 text-white' : 'bg-teal-500 text-teal-100'}`}>
+        {done ? '✓' : num}
+      </span>
+      {label}
+    </button>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// Syndrome card
+// ══════════════════════════════════════════════════════════════
 
 function SyndromeCard({ stat, isPrimary, isSelected, onToggle }: {
   stat: SyndromeStat; isPrimary: boolean; isSelected: boolean; onToggle: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className={`border rounded-xl overflow-hidden transition-all ${isPrimary ? 'border-teal-300 bg-gradient-to-r from-teal-50 to-white' : 'border-gray-200 bg-gray-50'}`}>
-      <div className="flex items-center gap-2 p-3">
-        {isPrimary && <span className="bg-teal-600 text-white text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap">Chính</span>}
+    <div className={`border rounded-lg overflow-hidden shadow-sm transition-all ${isPrimary ? 'border-teal-300' : 'border-gray-200'}`}>
+      <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isPrimary ? 'bg-teal-50' : 'bg-gray-50'}`}>
+        {isPrimary && <span className="bg-teal-600 text-white text-xs px-2 py-0.5 rounded font-bold whitespace-nowrap">Chính</span>}
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-800 text-sm">{stat.syndrome}</p>
-          <p className="text-xs text-gray-400">{stat.matched_count}/{stat.total_syndrome_symptoms} triệu chứng khớp</p>
+          <p className="font-semibold text-gray-800 text-sm leading-tight">{stat.syndrome}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{stat.matched_count}/{stat.total_syndrome_symptoms} triệu chứng khớp</p>
         </div>
         <ScoreBadge score={stat.score} large />
         <button onClick={() => setExpanded(!expanded)}
-          className="text-gray-400 hover:text-teal-600 text-xs px-2 py-1 rounded-lg hover:bg-teal-50 transition whitespace-nowrap">
+          className="text-gray-400 hover:text-teal-600 text-xs px-2 py-1 rounded hover:bg-teal-50 transition whitespace-nowrap border border-gray-200 hover:border-teal-200">
           {expanded ? '▲' : '▼'} Giải thích
         </button>
       </div>
       {expanded && (
-        <div className="border-t border-gray-100 p-3 space-y-1.5">
-          <p className="text-xs font-semibold text-gray-500 mb-1">Chuỗi suy luận: Triệu chứng → Đặc điểm → Cơ chế → Hội chứng</p>
+        <div className="border-t border-gray-100 p-3 bg-white space-y-1.5">
+          <p className="text-xs font-semibold text-gray-500 mb-2">Chuỗi suy luận: Triệu chứng → Đặc điểm → Cơ chế → Hội chứng</p>
           {stat.matched_symptoms.map((ms, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-gray-600 bg-white p-2 rounded-lg border border-gray-100">
-              <span className="text-teal-500 font-bold">·</span>
+            <div key={i} className="flex items-start gap-1.5 text-xs text-gray-600 bg-gray-50 p-2 rounded-lg border border-gray-100">
+              <span className="text-teal-500 font-bold mt-0.5">·</span>
               <div className="flex-1">
                 <span className="font-semibold text-teal-700">{ms.symptom}</span>
                 {ms.feature && (
@@ -507,13 +542,10 @@ function SyndromeCard({ stat, isPrimary, isSelected, onToggle }: {
                   </span>
                 )}
                 {!hasChinese(ms.mechanism) && ms.mechanism && (
-                  <>
-                    <span className="text-gray-300 mx-1">→</span>
-                    <span>{ms.mechanism}</span>
-                  </>
+                  <><span className="text-gray-300 mx-1">→</span><span>{ms.mechanism}</span></>
                 )}
                 <span className="text-gray-300 mx-1">→</span>
-                <span className="font-medium">{stat.syndrome}</span>
+                <span className="font-medium text-gray-700">{stat.syndrome}</span>
                 <span className="ml-1 text-gray-400">(fit: {(ms.fit_score * 100).toFixed(0)}%)</span>
               </div>
             </div>
@@ -526,14 +558,10 @@ function SyndromeCard({ stat, isPrimary, isSelected, onToggle }: {
 
 function ScoreBadge({ score, large }: { score: number; large?: boolean }) {
   const pct = Math.round(score * 100);
-  const color = pct >= 65 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : pct >= 35 ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-100';
+  const color = pct >= 65 ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+    : pct >= 35 ? 'bg-amber-100 text-amber-700 border-amber-300'
+    : 'bg-red-50 text-red-600 border-red-200';
   return <span className={`border rounded-full font-bold ${large ? 'px-2.5 py-0.5 text-sm' : 'px-2 py-0.5 text-xs'} ${color}`}>{pct}%</span>;
-}
-
-function ConfidenceBadge({ confidence }: { confidence: 'cao' | 'trung_bình' | 'thấp' }) {
-  const map = { cao: { label: 'Tin cậy cao', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }, trung_bình: { label: 'Tin cậy trung bình', cls: 'bg-amber-50 text-amber-700 border-amber-200' }, thấp: { label: 'Tin cậy thấp', cls: 'bg-red-50 text-red-600 border-red-100' } };
-  const { label, cls } = map[confidence];
-  return <span className={`ml-auto border text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
 }
 
 function Spinner() {
