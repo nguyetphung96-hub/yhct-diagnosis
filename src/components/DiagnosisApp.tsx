@@ -98,10 +98,10 @@ export default function DiagnosisApp() {
   const tab2Available = state.step >= 3 || state.step === 4;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
+    <div className="h-screen flex flex-col overflow-hidden bg-blue-800">
 
       {/* ── HEADER ── */}
-      <header className="flex-shrink-0 bg-teal-700 shadow-md">
+      <header className="flex-shrink-0 bg-blue-900 shadow-md">
         <div className="max-w-screen-xl mx-auto px-6 py-3 flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
             <span className="text-teal-700 text-base font-black">Y</span>
@@ -430,10 +430,10 @@ export default function DiagnosisApp() {
 // ══════════════════════════════════════════════════════════════
 
 const PANEL_COLORS = {
-  teal:   { border: 'border-l-teal-500',   header: 'bg-teal-600',   icon: 'bg-teal-100 text-teal-700' },
-  blue:   { border: 'border-l-blue-500',   header: 'bg-blue-600',   icon: 'bg-blue-100 text-blue-700' },
-  purple: { border: 'border-l-purple-500', header: 'bg-purple-600', icon: 'bg-purple-100 text-purple-700' },
-  emerald:{ border: 'border-l-emerald-500',header: 'bg-emerald-600',icon: 'bg-emerald-100 text-emerald-700' },
+  teal:   { border: 'border-l-teal-400',   header: 'bg-teal-50 border-b border-teal-200',   titleColor: 'text-teal-800' },
+  blue:   { border: 'border-l-blue-400',   header: 'bg-blue-50 border-b border-blue-200',   titleColor: 'text-blue-800' },
+  purple: { border: 'border-l-purple-400', header: 'bg-purple-50 border-b border-purple-200', titleColor: 'text-purple-800' },
+  emerald:{ border: 'border-l-emerald-400',header: 'bg-emerald-50 border-b border-emerald-200', titleColor: 'text-emerald-800' },
 };
 
 function Panel({ color, icon, title, badge, children }: {
@@ -445,13 +445,13 @@ function Panel({ color, icon, title, badge, children }: {
 }) {
   const c = PANEL_COLORS[color];
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 border-l-4 ${c.border} flex flex-col overflow-hidden`}>
+    <div className={`bg-white rounded-xl shadow-md border border-gray-200 border-l-4 ${c.border} flex flex-col overflow-hidden`}>
       {/* Panel header */}
       <div className={`flex-shrink-0 ${c.header} px-4 py-2.5 flex items-center gap-2.5`}>
         <span className="text-sm">{icon}</span>
-        <h2 className="text-sm font-bold text-white flex-1">{title}</h2>
+        <h2 className={`text-sm font-bold flex-1 ${c.titleColor}`}>{title}</h2>
         {badge && (
-          <span className="text-xs bg-white bg-opacity-20 text-white border border-white border-opacity-30 px-2 py-0.5 rounded-full font-medium">
+          <span className="text-xs bg-white text-green-700 border border-green-300 px-2 py-0.5 rounded-full font-medium">
             {badge.label}
           </span>
         )}
