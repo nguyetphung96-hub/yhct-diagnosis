@@ -98,7 +98,7 @@ export default function DiagnosisApp() {
   const tab2Available = state.step >= 3 || state.step === 4;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-blue-800">
+    <div className="h-screen flex flex-col overflow-hidden bg-slate-100">
 
       {/* ── HEADER ── */}
       <header className="flex-shrink-0 bg-blue-900 shadow-md">
@@ -256,9 +256,9 @@ export default function DiagnosisApp() {
 
       {/* ══════════════════════════════ TAB 2 ══════════════════════════════ */}
       {activeTab === 2 && tab2Available && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-screen-xl mx-auto px-6 py-4 w-full space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ minHeight: 'calc(100vh - 220px)' }}>
+        <div className="flex-1 overflow-hidden flex flex-col max-w-screen-xl mx-auto px-6 py-4 w-full gap-4">
+          {/* Grid panels — chiếm toàn bộ chiều cao còn lại, mỗi panel cuộn nội bộ */}
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4">
 
               {/* Frame C: Phân biệt hội chứng */}
               <Panel
@@ -389,9 +389,9 @@ export default function DiagnosisApp() {
               </Panel>
             </div>
 
-            {/* Frame E: Xác nhận bác sĩ */}
-            {state.final_result && state.final_result.optimal_syndromes.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border-l-4 border-teal-500 border border-gray-200 overflow-hidden">
+          {/* Frame E: Xác nhận bác sĩ — cố định ở dưới, không cuộn */}
+          {state.final_result && state.final_result.optimal_syndromes.length > 0 && (
+            <div className="flex-shrink-0 bg-white rounded-xl shadow-sm border-l-4 border-blue-500 border border-blue-200 overflow-hidden">
                 <div className="bg-teal-50 border-b border-teal-100 px-5 py-3 flex items-center gap-3">
                   <span className="text-base">👨‍⚕️</span>
                   <h2 className="text-sm font-bold text-teal-800">Xác nhận chẩn đoán của bác sĩ</h2>
@@ -416,9 +416,8 @@ export default function DiagnosisApp() {
                     </div>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -430,10 +429,10 @@ export default function DiagnosisApp() {
 // ══════════════════════════════════════════════════════════════
 
 const PANEL_COLORS = {
-  teal:   { border: 'border-l-teal-400',   header: 'bg-teal-50 border-b border-teal-200',   titleColor: 'text-teal-800' },
-  blue:   { border: 'border-l-blue-400',   header: 'bg-blue-50 border-b border-blue-200',   titleColor: 'text-blue-800' },
-  purple: { border: 'border-l-purple-400', header: 'bg-purple-50 border-b border-purple-200', titleColor: 'text-purple-800' },
-  emerald:{ border: 'border-l-emerald-400',header: 'bg-emerald-50 border-b border-emerald-200', titleColor: 'text-emerald-800' },
+  teal:   { border: 'border-l-blue-500', header: 'bg-blue-50 border-b border-blue-200', titleColor: 'text-blue-900' },
+  blue:   { border: 'border-l-blue-500', header: 'bg-blue-50 border-b border-blue-200', titleColor: 'text-blue-900' },
+  purple: { border: 'border-l-blue-500', header: 'bg-blue-50 border-b border-blue-200', titleColor: 'text-blue-900' },
+  emerald:{ border: 'border-l-blue-500', header: 'bg-blue-50 border-b border-blue-200', titleColor: 'text-blue-900' },
 };
 
 function Panel({ color, icon, title, badge, children }: {
